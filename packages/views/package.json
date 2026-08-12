@@ -1,0 +1,27 @@
+{
+  "name": "@investscope/views",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    "./dashboard": "./dashboard/index.ts",
+    "./dividend": "./dividend/index.ts",
+    "./portfolio": "./portfolio/index.ts",
+    "./market": "./market/index.ts",
+    "./layout": "./layout/index.ts"
+  },
+  "dependencies": {
+    "@investscope/core": "workspace:*",
+    "@investscope/ui": "workspace:*"
+  },
+  "peerDependencies": {
+    "react": "catalog:",
+    "react-dom": "catalog:"
+  },
+  "devDependencies": {
+    "@investscope/tsconfig": "workspace:*",
+    "@types/react": "catalog:",
+    "@types/react-dom": "catalog:",
+    "typescript": "catalog:"
+  }
+}

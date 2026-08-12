@@ -1,0 +1,21 @@
+{
+  "name": "invest-scope",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev:web": "lsof -t -i:3000 -i:3001 -i:3002 | xargs kill -9 2>/dev/null || true; turbo dev --filter=@investscope/web",
+    "dev:server": "lsof -t -i:8000 | xargs kill -9 2>/dev/null || true; cd server && ./venv/bin/python -m uvicorn app.main:app --reload --port 8000",
+    "build": "turbo build",
+    "typecheck": "turbo typecheck",
+    "test": "turbo test",
+    "lint": "turbo lint",
+    "clean": "turbo clean && rm -rf node_modules"
+  },
+  "packageManager": "pnpm@10.11.0",
+  "devDependencies": {
+    "turbo": "^2.5.4",
+    "typescript": "^5.9.3",
+    "@types/node": "^22.15.0"
+  }
+}

@@ -1,0 +1,27 @@
+{
+  "name": "@investscope/core",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./index.ts",
+    "./api": "./api/client.ts",
+    "./stores/*": "./stores/*.ts",
+    "./hooks/*": "./hooks/*.ts",
+    "./types": "./types/index.ts"
+  },
+  "dependencies": {
+    "@investscope/data": "workspace:*",
+    "zustand": "catalog:",
+    "zod": "catalog:"
+  },
+  "peerDependencies": {
+    "react": "catalog:"
+  },
+  "devDependencies": {
+    "@investscope/tsconfig": "workspace:*",
+    "@types/react": "catalog:",
+    "typescript": "catalog:",
+    "vitest": "catalog:"
+  }
+}

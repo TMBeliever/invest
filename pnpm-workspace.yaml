@@ -1,0 +1,36 @@
+packages:
+  - "apps/*"
+  - "packages/*"
+
+catalog:
+  # Core React
+  react: "19.1.0"
+  react-dom: "19.1.0"
+  "@types/react": "^19.1.0"
+  "@types/react-dom": "^19.1.0"
+
+  # TypeScript & Node
+  typescript: "^5.9.3"
+  "@types/node": "^22.15.0"
+
+  # State Management
+  zustand: "^5.0.5"
+
+  # Schema Validation
+  zod: "^3.25.0"
+
+  # UI & Styling
+  tailwindcss: "^4"
+  "@tailwindcss/postcss": "^4"
+  postcss: "^8"
+  "@tailwindcss/vite": "^4"
+
+  # Charts
+  echarts: "^5.6.0"
+  echarts-for-react: "^3.0.2"
+
+  # Icons
+  lucide-react: "^0.514.0"
+
+  # Testing
+  vitest: "^3.2.0"

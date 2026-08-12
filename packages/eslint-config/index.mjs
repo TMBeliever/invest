@@ -1,0 +1,8 @@
+export default {
+  extends: ["eslint:recommended"],
+  env: { browser: true, es2022: true, node: true },
+  parserOptions: { ecmaVersion: "latest", sourceType: "module" },
+  rules: {
+    "no-unused-vars": ["warn", { argsIgnorePattern: "^_" }],
+  },
+};

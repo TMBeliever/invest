@@ -1,0 +1,19 @@
+{
+  "name": "@investscope/data",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    "./schemas": "./schemas/index.ts",
+    "./calculators/*": "./calculators/*.ts",
+    "./constants/*": "./constants/*.ts"
+  },
+  "dependencies": {
+    "zod": "catalog:"
+  },
+  "devDependencies": {
+    "@investscope/tsconfig": "workspace:*",
+    "typescript": "catalog:",
+    "vitest": "catalog:"
+  }
+}

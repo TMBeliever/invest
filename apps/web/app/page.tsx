@@ -1,0 +1,314 @@
+"use client";
+
+import { useEffect } from "react";
+import { useMarketStore, useDividendStore, usePortfolioStore } from "@investscope/core";
+import {
+  TrendingUp,
+  Thermometer,
+  ArrowUpRight,
+  ArrowDownRight,
+  Activity,
+  PieChart,
+  RefreshCw,
+} from "lucide-react";
+
+function IndexCard({ index }: { index: { code: string; name: string; price: number; changePct: number } }) {
+  const isUp = index.changePct >= 0;
+  return (
+    <div className="glass-panel p-4 animate-fade-in hover:scale-[1.02] transition-transform cursor-pointer">
+      <div className="flex items-center justify-between mb-2">
+        <span className="text-xs text-default-400">{index.name}</span>
+        {isUp ? (
+          <ArrowUpRight className="w-4 h-4 text-rise" />
+        ) : (
+          <ArrowDownRight className="w-4 h-4 text-fall" />
+        )}
+      </div>
+      <div className="text-xl font-bold tracking-tight">
+        {index.price.toLocaleString("zh-CN", { minimumFractionDigits: 2 })}
+      </div>
+      <div className={`text-sm font-medium mt-1 ${isUp ? "text-rise" : "text-fall"}`}>
+        {isUp ? "+" : ""}{index.changePct.toFixed(2)}%
+      </div>
+    </div>
+  );
+}
+
+function TemperatureWidget() {
+  const { temperature, fetchTemperature, loading, error } = useDividendStore();
+
+  useEffect(() => {
+    fetchTemperature();
+  }, [fetchTemperature]);
+
+  if (loading["temperature"]) {
+    return (
+      <div className="glass-panel p-6 animate-pulse flex items-center justify-center h-48 text-xs text-default-400">
+        <RefreshCw className="w-4 h-4 animate-spin mr-2" /> 实时加载红利板块温度...
+      </div>
+    );
+  }
+
+  if (error["temperature"]) {
+    return (
+      <div className="glass-panel p-6 text-xs text-red-400">
+        温度加载失败: {error["temperature"]}
+      </div>
+    );
+  }
+
+  const temp = temperature?.temperature ?? 0;
+  const pct = temp / 100;
+  const suggestion = temperature?.suggestion ?? "--";
+
+  return (
+    <div className="glass-panel p-6 animate-fade-in">
+      <div className="flex items-center justify-between mb-4">
+        <div className="flex items-center gap-2">
+          <Thermometer className="w-5 h-5 text-primary" />
+          <h3 className="text-sm font-semibold">红利板块温度</h3>
+        </div>
+      </div>
+
+      <div className="flex items-end gap-2 mb-4">
+        <span className="text-5xl font-bold tracking-tighter">{temp}</span>
+        <span className="text-2xl text-default-400 mb-1">°C</span>
+        <span className={`
+          ml-auto text-xs font-medium px-2.5 py-1 rounded-full
+          ${temp < 30 ? "bg-blue-500/15 text-blue-400" :
+            temp < 60 ? "bg-yellow-500/15 text-yellow-400" :
+            temp < 80 ? "bg-orange-500/15 text-orange-400" :
+            "bg-red-500/15 text-red-400"
+          }
+        `}>
+          {temp < 30 ? "偏冷 · 贪婪区" : temp < 60 ? "中性" : temp < 80 ? "偏热" : "过热"}
+        </span>
+      </div>
+
+      <div className="relative h-3 rounded-full temperature-gradient overflow-hidden mb-3">
+        <div
+          className="absolute top-1/2 -translate-y-1/2 w-4 h-4 bg-white rounded-full shadow-lg border-2 border-default-200 transition-all duration-500"
+          style={{ left: `calc(${pct * 100}% - 8px)` }}
+        />
+      </div>
+
+      <p className="text-xs text-default-400 leading-relaxed">
+        💡 {suggestion}
+      </p>
+    </div>
+  );
+}
+
+function TopDividendWidget() {
+  const { topStocks, fetchTopStocks, loading } = useDividendStore();
+
+  useEffect(() => {
+    fetchTopStocks();
+  }, [fetchTopStocks]);
+
+  const stocks = topStocks.slice(0, 5);
+
+  return (
+    <div className="glass-panel p-6 animate-fade-in">
+      <div className="flex items-center justify-between mb-4">
+        <div className="flex items-center gap-2">
+          <TrendingUp className="w-5 h-5 text-emerald-500" />
+          <h3 className="text-sm font-semibold">高胜率红利股 Top 5</h3>
+        </div>
+        <a href="/dividend" className="text-xs text-primary hover:underline">查看全部 →</a>
+      </div>
+
+      {loading["topStocks"] ? (
+        <div className="py-12 text-center text-xs text-default-400">
+          <RefreshCw className="w-4 h-4 animate-spin inline mr-1" /> 加载高胜率榜单...
+        </div>
+      ) : stocks.length === 0 ? (
+        <div className="py-12 text-center text-xs text-default-400">暂无排行数据</div>
+      ) : (
+        <div className="space-y-3">
+          {stocks.map((stock: any, index: number) => (
+            <a key={stock.code} href={`/dividend/${stock.code}`} className="flex items-center gap-3 p-2.5 rounded-xl hover:bg-default-100/50 transition-colors cursor-pointer block">
+              <span className={`
+                w-6 h-6 flex items-center justify-center rounded-full text-xs font-bold
+                ${index < 3 ? "bg-primary/15 text-primary" : "bg-default-100 text-default-500"}
+              `}>
+                {index + 1}
+              </span>
+              <div className="flex-1 min-w-0">
+                <div className="flex items-center gap-2">
+                  <span className="text-sm font-medium truncate">{stock.name}</span>
+                  <span className="text-[10px] text-default-400">{stock.code}</span>
+                </div>
+                <div className="flex items-center gap-3 mt-0.5">
+                  <span className="text-[10px] text-default-400">评分 {stock.overallScore}</span>
+                  <span className="text-[10px] text-default-400">股息率 {stock.dividendYield}%</span>
+                  <span className="text-[10px] text-default-400">胜率 {stock.winRates?.threeYear}%</span>
+                </div>
+              </div>
+              <span className={`
+                text-[10px] font-medium px-2 py-0.5 rounded-full
+                ${stock.signal === "STRONG_BUY" ? "bg-emerald-500/15 text-emerald-400" :
+                  stock.signal === "BUY" ? "bg-green-500/15 text-green-400" :
+                  "bg-yellow-500/15 text-yellow-400"
+                }
+              `}>
+                {stock.signal === "STRONG_BUY" ? "强烈买入" : stock.signal === "BUY" ? "买入" : "持有"}
+              </span>
+            </a>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function AllocationWidget() {
+  const { summary, fetchSummary, loading } = usePortfolioStore();
+
+  useEffect(() => {
+    fetchSummary();
+  }, [fetchSummary]);
+
+  if (loading["summary"]) {
+    return (
+      <div className="glass-panel p-6 animate-pulse flex items-center justify-center h-48 text-xs text-default-400">
+        <RefreshCw className="w-4 h-4 animate-spin mr-2" /> 读取持仓与配置...
+      </div>
+    );
+  }
+
+  const totalAssets = summary?.totalAssets ?? 0;
+  const core = summary?.allocation.core ?? 0;
+  const satellite = summary?.allocation.satellite ?? 0;
+  const reserve = summary?.allocation.reserve ?? 0;
+  const profitPct = summary?.totalProfitLossPct ?? 0;
+
+  return (
+    <div className="glass-panel p-6 animate-fade-in">
+      <div className="flex items-center gap-2 mb-4">
+        <PieChart className="w-5 h-5 text-violet-500" />
+        <h3 className="text-sm font-semibold">资产配置</h3>
+      </div>
+
+      <div className="flex items-end gap-2 mb-4">
+        <span className="text-3xl font-bold">
+          ¥{(totalAssets / 10000).toFixed(1)}
+        </span>
+        <span className="text-sm text-default-400 mb-0.5">万</span>
+        <span className="text-sm text-emerald-400 ml-auto">+{profitPct}%</span>
+      </div>
+
+      <div className="flex rounded-full overflow-hidden h-2.5 mb-4">
+        <div className="bg-emerald-500" style={{ width: `${core}%` }} />
+        <div className="bg-violet-500" style={{ width: `${satellite}%` }} />
+        <div className="bg-amber-500" style={{ width: `${reserve}%` }} />
+      </div>
+
+      <div className="grid grid-cols-3 gap-2 text-center">
+        <div>
+          <div className="flex items-center justify-center gap-1.5 mb-1">
+            <div className="w-2 h-2 rounded-full bg-emerald-500" />
+            <span className="text-[10px] text-default-400">核心仓</span>
+          </div>
+          <span className="text-sm font-semibold">{core}%</span>
+          <span className="text-[10px] text-default-400 block">目标 60%</span>
+        </div>
+        <div>
+          <div className="flex items-center justify-center gap-1.5 mb-1">
+            <div className="w-2 h-2 rounded-full bg-violet-500" />
+            <span className="text-[10px] text-default-400">卫星仓</span>
+          </div>
+          <span className="text-sm font-semibold">{satellite}%</span>
+          <span className="text-[10px] text-default-400 block">目标 30%</span>
+        </div>
+        <div>
+          <div className="flex items-center justify-center gap-1.5 mb-1">
+            <div className="w-2 h-2 rounded-full bg-amber-500" />
+            <span className="text-[10px] text-default-400">储备金</span>
+          </div>
+          <span className="text-sm font-semibold">{reserve}%</span>
+          <span className="text-[10px] text-default-400 block">目标 10%</span>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function SentimentWidget() {
+  const { sentiment, fetchSentiment } = useMarketStore();
+
+  useEffect(() => {
+    fetchSentiment();
+  }, [fetchSentiment]);
+
+  const score = sentiment?.fearGreedIndex ?? 0;
+  const bondYield = sentiment?.bondYield10Y ?? 0;
+
+  return (
+    <div className="glass-panel p-6 animate-fade-in">
+      <div className="flex items-center gap-2 mb-4">
+        <Activity className="w-5 h-5 text-amber-500" />
+        <h3 className="text-sm font-semibold">市场情绪 & 国债收益率</h3>
+      </div>
+      <div className="flex items-end gap-2 mb-2">
+        <span className="text-4xl font-bold">{score}</span>
+        <span className="text-sm text-default-400 mb-1">/ 100</span>
+        <span className="text-xs text-default-400 ml-auto mb-1">10年国债 {bondYield}%</span>
+      </div>
+      <div className="h-2 bg-default-100 rounded-full overflow-hidden mb-3">
+        <div
+          className="h-full rounded-full bg-gradient-to-r from-red-500 via-yellow-500 to-green-500"
+          style={{ width: `${score}%` }}
+        />
+      </div>
+      <p className="text-xs text-amber-400 font-medium">偏恐慌 — 历史表明通常是加仓防御资产良机</p>
+    </div>
+  );
+}
+
+export default function DashboardPage() {
+  const { indices, fetchIndices, loading } = useMarketStore();
+
+  useEffect(() => {
+    fetchIndices();
+  }, [fetchIndices]);
+
+  return (
+    <div className="p-6 max-w-[1400px] mx-auto">
+      {/* Header */}
+      <div className="mb-6">
+        <h1 className="text-2xl font-bold tracking-tight">仪表盘</h1>
+        <p className="text-sm text-default-400 mt-1">
+          {new Date().toLocaleDateString("zh-CN", { year: "numeric", month: "long", day: "numeric", weekday: "long" })}
+        </p>
+      </div>
+
+      {/* 指数行情 */}
+      {loading["indices"] && indices.length === 0 ? (
+        <div className="py-8 text-center text-xs text-default-400 glass-panel mb-6">
+          <RefreshCw className="w-4 h-4 animate-spin inline mr-2" /> 抓取实时大盘指数中...
+        </div>
+      ) : (
+        <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3 mb-6">
+          {indices.map((index) => (
+            <IndexCard key={index.code} index={index} />
+          ))}
+        </div>
+      )}
+
+      {/* 主要内容区 */}
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+        <div className="space-y-4">
+          <TemperatureWidget />
+          <SentimentWidget />
+        </div>
+        <div>
+          <TopDividendWidget />
+        </div>
+        <div>
+          <AllocationWidget />
+        </div>
+      </div>
+    </div>
+  );
+}
