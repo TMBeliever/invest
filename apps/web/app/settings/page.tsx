@@ -2,6 +2,7 @@
 
 import { Settings, Server, Database, Moon, Bell, Shield } from "lucide-react";
 import { useConfigStore } from "@investscope/core";
+import { SegmentedTabs } from "@investscope/ui";
 
 export default function SettingsPage() {
   const { theme, setTheme, apiBaseUrl, setApiBaseUrl } = useConfigStore();
@@ -73,20 +74,15 @@ export default function SettingsPage() {
               <div className="text-sm font-medium">主题风格</div>
               <div className="text-xs text-default-400 mt-0.5">选择你偏好的系统颜色模式</div>
             </div>
-            <div className="flex gap-2 bg-default-100 p-1 rounded-xl text-xs">
-              {(["dark", "light", "system"] as const).map((t) => (
-                <button
-                  key={t}
-                  onClick={() => setTheme(t)}
-                  className={`
-                    px-3 py-1.5 rounded-lg font-medium transition-colors
-                    ${theme === t ? "bg-background text-foreground shadow-sm" : "text-default-400 hover:text-foreground"}
-                  `}
-                >
-                  {t === "dark" ? "深色" : t === "light" ? "浅色" : "跟随系统"}
-                </button>
-              ))}
-            </div>
+            <SegmentedTabs
+              items={[
+                { key: "dark", label: "🌙 深色" },
+                { key: "light", label: "☀️ 浅色" },
+                { key: "system", label: "💻 跟随系统" },
+              ]}
+              value={theme}
+              onChange={(val) => setTheme(val as any)}
+            />
           </div>
         </div>
       </div>

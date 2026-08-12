@@ -1,9 +1,27 @@
 @import "tailwindcss";
+@source "../../packages";
 @import "@heroui/styles";
 
 :root {
   --sidebar-width: 260px;
   --header-height: 56px;
+}
+
+/* Tab 分段控件选中的简约风带边框样式 */
+.segmented-tab-active-primary {
+  background-color: rgba(59, 130, 246, 0.12) !important;
+  color: #60a5fa !important;
+  border: 1px solid rgba(59, 130, 246, 0.35) !important;
+  font-weight: 700 !important;
+  box-shadow: 0 2px 8px 0 rgba(59, 130, 246, 0.15) !important;
+}
+
+.segmented-tab-active-emerald {
+  background-color: rgba(16, 185, 129, 0.12) !important;
+  color: #34d399 !important;
+  border: 1px solid rgba(16, 185, 129, 0.35) !important;
+  font-weight: 700 !important;
+  box-shadow: 0 2px 8px 0 rgba(16, 185, 129, 0.15) !important;
 }
 
 /* 暗色玻璃拟态主题增强 */

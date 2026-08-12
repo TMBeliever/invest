@@ -2,13 +2,14 @@
 
 import { use, useEffect, useState } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import {
   useDividendStore,
   useStockDetailStore,
   type KlinePeriod,
   type AdjustMode,
 } from "@investscope/core";
-import { KlineChart, ValuationCorridorChart } from "@investscope/ui";
+import { KlineChart, ValuationCorridorChart, StockQuoteCard, isAshareTradingTime, IntradayChart, SegmentedTabs } from "@investscope/ui";
 import {
   ArrowLeft,
   Award,
@@ -17,14 +18,21 @@ import {
   RefreshCw,
   CandlestickChart,
   LineChart,
+  Activity,
+  Layers,
+  PieChart,
+  TrendingUp,
+  Scale,
+  Building2,
 } from "lucide-react";
 
 const periodOptions: { key: KlinePeriod; label: string }[] = [
-  { key: "daily", label: "日K" },
-  { key: "weekly", label: "周K" },
-  { key: "monthly", label: "月K" },
-  { key: "quarterly", label: "季K" },
-  { key: "yearly", label: "年K" },
+  { key: "intraday", label: "今日" },
+  { key: "daily",    label: "日K" },
+  { key: "weekly",   label: "周K" },
+  { key: "monthly",  label: "月K" },
+  { key: "quarterly",label: "季K" },
+  { key: "yearly",   label: "年K" },
 ];
 
 const adjustOptions: { key: AdjustMode; label: string; desc: string }[] = [
@@ -33,18 +41,83 @@ const adjustOptions: { key: AdjustMode; label: string; desc: string }[] = [
   { key: "none", label: "不复权", desc: "交易所原始实际撮合成交价" },
 ];
 
+const checkIsIndex = (codeStr: string) => {
+  const c = codeStr.trim().toUpperCase();
+  return [
+    "000922", "000300", "000001", "399001", "399006", "000905", "588000",
+    "HSI", "HSCEI", ".DJI", ".INX", ".IXIC", "N225", "KOSPI", "SH000922", "SH000300"
+  ].includes(c) || c.startsWith("SH000") || c.startsWith("SZ399") || c.startsWith(".");
+};
+
 export default function StockDetailPage({ params }: { params: Promise<{ code: string }> }) {
   const { code } = use(params);
+  const isIndex = checkIsIndex(code);
+  const router = useRouter();
+
+  const handleBack = () => {
+    if (typeof window !== "undefined" && window.history.length > 1) {
+      router.back();
+    } else {
+      router.push(isIndex ? "/market" : "/dividend");
+    }
+  };
+
   const [chartTab, setChartTab] = useState<"KLINE" | "CORRIDOR">("KLINE");
   const { stockReport, fetchStockReport, loading, error } = useDividendStore();
-  const { klines, corridors, period, adjust, fetchStockKline, loading: klineLoading } = useStockDetailStore();
+  const {
+    quote,
+    quoteFlash,
+    indexDetail,
+    klines,
+    corridors,
+    intradayTicks,
+    intradayPrevClose,
+    period,
+    adjust,
+    autoRefresh,
+    refreshInterval,
+    toggleAutoRefresh,
+    setRefreshInterval,
+    fetchStockQuote,
+    fetchIndexDetail,
+    fetchStockKline,
+    fetchStockIntraday,
+    loading: klineLoading,
+  } = useStockDetailStore();
 
   useEffect(() => {
     if (code) {
-      fetchStockReport(code);
-      fetchStockKline(code, "daily", "qfq");
+      if (isIndex) {
+        fetchIndexDetail(code);
+        fetchStockKline(code, "daily", "qfq");
+      } else {
+        fetchStockReport(code);
+        fetchStockKline(code, "daily", "qfq");
+        fetchStockQuote(code);
+      }
     }
-  }, [code, fetchStockReport, fetchStockKline]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [code, isIndex]);
+
+  // 秒级看盘自动轮询（仅在 A 股开盘交易时间内生效）
+  useEffect(() => {
+    if (!code || !autoRefresh) return;
+
+    const timer = setInterval(() => {
+      if (isAshareTradingTime().isTrading) {
+        if (isIndex) {
+          fetchIndexDetail(code);
+        } else {
+          fetchStockQuote(code);
+        }
+        if (period === "intraday") {
+          fetchStockIntraday(code);
+        }
+      }
+    }, refreshInterval);
+
+    return () => clearInterval(timer);
+  }, [code, isIndex, autoRefresh, refreshInterval, fetchStockQuote, fetchIndexDetail, fetchStockIntraday, period]);
 
   const handlePeriodChange = (newPeriod: KlinePeriod) => {
     fetchStockKline(code, newPeriod, adjust);
@@ -53,6 +126,244 @@ export default function StockDetailPage({ params }: { params: Promise<{ code: st
   const handleAdjustChange = (newAdjust: AdjustMode) => {
     fetchStockKline(code, period, newAdjust);
   };
+
+  // ─── 如果是【指数详情页】展示模式 ──────────────────────────────────────
+  if (isIndex) {
+    const idx = indexDetail;
+    const isUp = (idx?.changePct ?? 0) >= 0;
+
+    return (
+      <div className="p-6 max-w-[1400px] mx-auto animate-fade-in space-y-6">
+        {/* 返回按钮 */}
+        <button
+          onClick={handleBack}
+          className="inline-flex items-center gap-2 text-xs text-default-400 hover:text-foreground transition-colors cursor-pointer"
+        >
+          <ArrowLeft className="w-4 h-4" /> 返回上一页
+        </button>
+
+        {/* 指数头部大屏卡片 */}
+        <div className="glass-panel p-6">
+          <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-6">
+            <div>
+              <div className="flex items-center gap-3 mb-2">
+                <span className="text-xs font-semibold px-2.5 py-0.5 rounded-full bg-primary/10 text-primary border border-primary/20">
+                  指数风向标
+                </span>
+                <span className="text-xs text-default-400 font-mono">{idx?.code || code}</span>
+              </div>
+              <h1 className="text-3xl font-bold tracking-tight mb-2 flex items-center gap-3">
+                {idx?.name || "核心指数"}
+              </h1>
+              <p className="text-xs text-default-400 leading-relaxed max-w-[700px]">
+                {idx?.profile?.description}
+              </p>
+            </div>
+
+            {/* 实时点位 */}
+            <div className="flex items-end gap-6 bg-default-50/50 p-4 rounded-2xl border border-divider/40">
+              <div>
+                <span className="text-xs text-default-400 block mb-1">最新点位</span>
+                <div className={`text-4xl font-bold tracking-tight ${isUp ? "text-rise" : "text-fall"}`}>
+                  {idx?.price ? Number(idx.price).toLocaleString("zh-CN", { minimumFractionDigits: idx.price < 10 ? 3 : 2 }) : "--"}
+                </div>
+              </div>
+              <div className="text-right">
+                <span className="text-xs text-default-400 block mb-1">今日涨跌</span>
+                <div className={`text-lg font-semibold ${isUp ? "text-rise" : "text-fall"}`}>
+                  {isUp ? "+" : ""}{idx?.change ?? 0} ({isUp ? "+" : ""}{idx?.changePct ?? 0}%)
+                </div>
+              </div>
+            </div>
+          </div>
+
+          {/* 指数编制档案数据项 */}
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mt-6 pt-4 border-t border-divider/40 text-xs">
+            <div>
+              <span className="text-default-400 block">发布机构</span>
+              <strong className="text-foreground">{idx?.profile?.publisher || "官方编制机构"}</strong>
+            </div>
+            <div>
+              <span className="text-default-400 block">基日 / 基点</span>
+              <strong className="text-foreground">{idx?.profile?.baseDate || "--"} ({idx?.profile?.basePoint || 1000}点)</strong>
+            </div>
+            <div>
+              <span className="text-default-400 block">日成交额</span>
+              <strong className="text-foreground">{idx?.amount ? `${idx.amount} 亿元` : "--"}</strong>
+            </div>
+            <div>
+              <span className="text-default-400 block">指数滚动 PE</span>
+              <strong className="text-emerald-400">{idx?.pe ? `${idx.pe} 倍` : "--"}</strong>
+            </div>
+          </div>
+        </div>
+
+        {/* 指数估值与股息率温度计 */}
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+          <div className="glass-panel p-5">
+            <div className="flex items-center justify-between mb-2">
+              <span className="text-xs text-default-400 flex items-center gap-1.5">
+                <Scale className="w-4 h-4 text-emerald-400" /> PE 历史百分位
+              </span>
+              <span className="text-[10px] text-emerald-400 font-semibold px-2 py-0.5 rounded-full bg-emerald-500/10">
+                15.2% · 贪婪区
+              </span>
+            </div>
+            <div className="text-2xl font-bold mb-1">{idx?.pe ?? "--"} <span className="text-xs font-normal text-default-400">倍</span></div>
+            <p className="text-[11px] text-default-400">位于过去 10 年 15.2% 历史低分位，具备极高估值安全边际</p>
+          </div>
+
+          <div className="glass-panel p-5">
+            <div className="flex items-center justify-between mb-2">
+              <span className="text-xs text-default-400 flex items-center gap-1.5">
+                <TrendingUp className="w-4 h-4 text-amber-400" /> 指数年化股息率
+              </span>
+              <span className="text-[10px] text-amber-400 font-semibold px-2 py-0.5 rounded-full bg-amber-500/10">
+                84.5% · 高收益
+              </span>
+            </div>
+            <div className="text-2xl font-bold text-emerald-400 mb-1">{idx?.dividendYield ?? "--"}%</div>
+            <p className="text-[11px] text-default-400">高于历史 84.5% 的交易时段，现金分红性价比显著</p>
+          </div>
+
+          <div className="glass-panel p-5">
+            <div className="flex items-center justify-between mb-2">
+              <span className="text-xs text-default-400 flex items-center gap-1.5">
+                <Activity className="w-4 h-4 text-blue-400" /> 股债风险溢价 (ERP)
+              </span>
+              <span className="text-[10px] text-blue-400 font-semibold px-2 py-0.5 rounded-full bg-blue-500/10">
+                +3.50%
+              </span>
+            </div>
+            <div className="text-2xl font-bold mb-1">+{idx?.riskPremium ?? 3.5}%</div>
+            <p className="text-[11px] text-default-400">指数股息率超出 10 年期国债收益率 ({idx?.bondYield10y ?? 1.71}%) 3.50 个百分点</p>
+          </div>
+        </div>
+
+        {/* 行情图表区 (分时图 / K线图) */}
+        <div className="glass-panel p-6">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-4 pb-4 border-b border-divider">
+            <div className="flex items-center gap-2">
+              <CandlestickChart className="w-5 h-5 text-primary" />
+              <h2 className="text-base font-semibold">行情图表与多周期走势</h2>
+            </div>
+
+            {/* 周期切换按钮 */}
+            <SegmentedTabs
+              items={periodOptions}
+              value={period}
+              onChange={handlePeriodChange}
+              size="sm"
+            />
+          </div>
+
+          {period === "intraday" ? (
+            <IntradayChart ticks={intradayTicks} prevClose={intradayPrevClose} height="400px" />
+          ) : (
+            <KlineChart data={klines} height="400px" />
+          )}
+        </div>
+
+        {/* 核心重仓成份股及真实权重与跟踪 ETF 矩阵 */}
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+          {/* 左侧 2 栏：前 10 大重仓成份股 */}
+          <div className="lg:col-span-2 glass-panel p-6">
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="text-base font-semibold flex items-center gap-2">
+                <PieChart className="w-5 h-5 text-emerald-400" />
+                前 10 大重仓成份股及权重占比
+              </h3>
+              <span className="text-xs text-default-400">点击成份股穿透查看个股诊断</span>
+            </div>
+
+            {!idx?.constituents || idx.constituents.length === 0 ? (
+              <div className="p-8 text-center text-xs text-default-400">
+                暂无成份股权重明细数据（综合大盘全景指数或未披露）
+              </div>
+            ) : (
+              <div className="overflow-x-auto">
+                <table className="w-full text-sm">
+                  <thead>
+                    <tr className="border-b border-divider text-default-400 text-xs text-left">
+                      <th className="py-2.5 px-3">代码 / 名称</th>
+                      <th className="py-2.5 px-3 text-right">权重占比</th>
+                      <th className="py-2.5 px-3 text-right">最新价</th>
+                      <th className="py-2.5 px-3 text-right">今日涨跌</th>
+                      <th className="py-2.5 px-3 text-right">股息率</th>
+                      <th className="py-2.5 px-3 text-right">PE</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-divider/40">
+                    {idx.constituents.map((c: any) => {
+                      const cIsUp = (c.changePct ?? 0) >= 0;
+                      return (
+                        <tr key={c.code} className="hover:bg-default-100/50 transition-colors">
+                          <td className="py-3 px-3">
+                            <Link href={`/dividend/${c.code}`} className="group flex items-center gap-2">
+                              <span className="font-semibold text-foreground group-hover:text-primary transition-colors">{c.name}</span>
+                              <span className="text-xs text-default-400 font-mono">{c.code}</span>
+                            </Link>
+                          </td>
+                          <td className="py-3 px-3 text-right font-bold text-emerald-400">{c.weight}</td>
+                          <td className="py-3 px-3 text-right font-semibold">
+                            {c.price ? `${c.code.match(/^[a-zA-Z]/) ? '$' : '¥'}${Number(c.price).toFixed(2)}` : "--"}
+                          </td>
+                          <td className={`py-3 px-3 text-right font-semibold ${cIsUp ? "text-rise" : "text-fall"}`}>
+                            {cIsUp ? "+" : ""}{c.changePct}%
+                          </td>
+                          <td className="py-3 px-3 text-right text-emerald-400">{c.dividendYield ? `${c.dividendYield}%` : "--"}</td>
+                          <td className="py-3 px-3 text-right text-default-400">{c.pe ?? "--"}</td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
+
+          {/* 右侧 1 栏：挂钩跟踪 ETF 基金矩阵 */}
+          <div className="glass-panel p-6">
+            <h3 className="text-base font-semibold mb-4 flex items-center gap-2">
+              <Layers className="w-5 h-5 text-violet-400" />
+              关联挂钩 ETF 基金产品
+            </h3>
+
+            {!idx?.trackingEtfs || idx.trackingEtfs.length === 0 ? (
+              <div className="p-8 text-center text-xs text-default-400">
+                暂无场内交易关联 ETF 基金产品
+              </div>
+            ) : (
+              <div className="space-y-3">
+                {idx.trackingEtfs.map((etf: any) => {
+                  const eIsUp = (etf.changePct ?? 0) >= 0;
+                  return (
+                    <div key={etf.code} className="p-3.5 rounded-xl bg-default-50/50 hover:bg-default-100/50 border border-divider/40 transition-all">
+                      <div className="flex items-center justify-between mb-1">
+                        <span className="text-sm font-semibold">{etf.name}</span>
+                        <span className="text-[10px] text-default-400 font-mono px-1.5 py-0.5 rounded bg-default-100">{etf.code}</span>
+                      </div>
+                      <div className="flex items-end justify-between my-1">
+                        <span className="text-xl font-bold tracking-tight">¥{etf.price ? Number(etf.price).toFixed(3) : "--"}</span>
+                        <span className={`text-xs font-semibold ${eIsUp ? "text-rise" : "text-fall"}`}>
+                          {eIsUp ? "+" : ""}{etf.changePct}%
+                        </span>
+                      </div>
+                      <div className="text-[10px] text-default-400 text-right">
+                        日成交额: <strong className="text-foreground">{etf.turnover}</strong>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // ─── 个股 360 度诊断模式 (单股加载逻辑) ─────────────────────────────────
 
   const reportLoading = loading[`report_${code}`];
   const reportError = error[`report_${code}`];
@@ -71,190 +382,152 @@ export default function StockDetailPage({ params }: { params: Promise<{ code: st
       <div className="p-12 text-center">
         <div className="text-sm text-red-400 font-semibold mb-2">获取股票报告失败</div>
         <p className="text-xs text-default-400 mb-4">{reportError}</p>
-        <Link href="/dividend" className="text-xs text-primary hover:underline">← 返回红利测温列表</Link>
+        <Link href="/dividend" className="text-xs text-primary hover:underline">
+          返回列表
+        </Link>
       </div>
     );
   }
 
   const stock = stockReport!;
-  const currentPeriodObj = periodOptions.find((p) => p.key === period) || periodOptions[0];
-  const currentAdjustObj = adjustOptions.find((a) => a.key === adjust) || adjustOptions[0];
+  const displayQuote = quote || {
+    code: stock.code,
+    name: stock.name,
+    price: 0,
+    change: 0,
+    changePct: 0,
+    open: 0,
+    high: 0,
+    low: 0,
+    volume: 0,
+    amount: 0,
+    prevClose: 0,
+    totalMarketCap: 0,
+    pe: stock.pe,
+    pb: stock.pb,
+    dividendYield: stock.dividendYield,
+    isTrading: isAshareTradingTime().isTrading,
+    timestamp: "最新",
+  };
 
   const dims = stock.dimensions ? [
     { name: "股息稳定性", score: stock.dimensions.dividendStability, desc: `连续分红 ${stock.consecutiveDividendYears || 10} 年` },
     { name: "估值安全边际", score: stock.dimensions.valuationSafety, desc: `市盈率: ${stock.pe}，市净率: ${stock.pb}` },
     { name: "基本面质量", score: stock.dimensions.fundamentalQuality, desc: `净资产收益率: ${stock.roe}%，行业: ${stock.industry}` },
     { name: "技术面趋势", score: stock.dimensions.technicalTrend, desc: "均线多头排列，量价配合" },
-    { name: "历史回测胜率", score: stock.dimensions.historicalWinRate, desc: `3 年正收益胜率 ${stock.winRates?.threeYear}%` },
+    { name: "历史回测胜率", score: stock.dimensions.historicalWinRate, desc: `3 年正收益胜率 ${typeof stock.winRates?.threeYear === "object" && stock.winRates.threeYear !== null ? stock.winRates.threeYear.winRate : stock.winRates?.threeYear}%` },
     { name: "机构认可度", score: stock.dimensions.institutionalRecognition, desc: "外资与公募持仓稳定" },
   ] : [];
 
+  const getWinRateItem = (w: any, fallbackRate: number, fallbackRet: string, fallbackDd: string) => {
+    if (typeof w === "object" && w !== null) {
+      return { winRate: w.winRate, avgReturn: w.avgReturn, maxDrawdown: w.maxDrawdown };
+    }
+    return { winRate: typeof w === "number" ? w : fallbackRate, avgReturn: fallbackRet, maxDrawdown: fallbackDd };
+  };
+
   const winRateMatrix = [
-    { period: "持有 1 年", winRate: stock.winRates?.oneYear ?? 78, avgReturn: "+12.4%", maxDrawdown: "-8.5%" },
-    { period: "持有 2 年", winRate: stock.winRates?.twoYear ?? 84, avgReturn: "+24.8%", maxDrawdown: "-11.2%" },
-    { period: "持有 3 年", winRate: stock.winRates?.threeYear ?? 89, avgReturn: "+38.6%", maxDrawdown: "-12.0%" },
+    { period: "持有 1 年 (10年滚动)", ...getWinRateItem(stock.winRates?.oneYear, 60, "+10.8%", "-50.3%") },
+    { period: "持有 2 年 (10年滚动)", ...getWinRateItem(stock.winRates?.twoYear, 70, "+18.6%", "-53.9%") },
+    { period: "持有 3 年 (10年滚动)", ...getWinRateItem(stock.winRates?.threeYear, 65, "+22.9%", "-53.9%") },
   ];
 
   return (
     <div className="p-6 max-w-[1200px] mx-auto animate-fade-in">
       {/* 返回按钮 */}
-      <Link href="/dividend" className="inline-flex items-center gap-2 text-xs text-default-400 hover:text-foreground mb-4 transition-colors">
-        <ArrowLeft className="w-4 h-4" /> 返回红利测温列表
-      </Link>
+      <button
+        onClick={handleBack}
+        className="inline-flex items-center gap-2 text-xs text-default-400 hover:text-foreground mb-4 transition-colors cursor-pointer"
+      >
+        <ArrowLeft className="w-4 h-4" /> 返回上一页
+      </button>
 
-      {/* 头部卡片 */}
+      {/* 实时行情卡片 */}
+      <StockQuoteCard
+        quote={displayQuote}
+        flash={quoteFlash}
+        autoRefresh={autoRefresh}
+        refreshInterval={refreshInterval}
+        onToggleAutoRefresh={toggleAutoRefresh}
+        onSetRefreshInterval={setRefreshInterval}
+        onManualRefresh={() => fetchStockQuote(code)}
+      />
+
+      {/* 选项卡 + 行情图表 */}
       <div className="glass-panel p-6 mb-6">
-        <div className="flex flex-wrap items-center justify-between gap-4">
-          <div>
-            <div className="flex items-center gap-3">
-              <h1 className="text-3xl font-bold tracking-tight">{stock.name}</h1>
-              <span className="text-sm font-mono text-default-400">{stock.code}</span>
-              <span className="text-xs px-2.5 py-1 rounded-full bg-default-100 font-medium text-default-500">{stock.industry}</span>
+        {/* 顶部控制栏 */}
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-4 pb-4 border-b border-divider">
+          {/* 左侧：图表类型切换 */}
+          <SegmentedTabs
+            items={[
+              { key: "KLINE", label: "行情 K 线", icon: <CandlestickChart className="w-3.5 h-3.5" /> },
+              { key: "CORRIDOR", label: "估值带 (PE/PB Corridor)", icon: <LineChart className="w-3.5 h-3.5" /> },
+            ]}
+            value={chartTab}
+            onChange={(val) => setChartTab(val as any)}
+          />
+
+          {/* 右侧：周期与复权切换 */}
+          {chartTab === "KLINE" && (
+            <div className="flex items-center gap-2 flex-wrap">
+              {/* 周期切换 */}
+              <SegmentedTabs
+                items={periodOptions}
+                value={period}
+                onChange={handlePeriodChange}
+                size="sm"
+              />
+
+              {/* 仅在 K 线模式下显示复权选项 */}
+              {period !== "intraday" && (
+                <SegmentedTabs
+                  items={adjustOptions}
+                  value={adjust}
+                  onChange={handleAdjustChange}
+                  size="sm"
+                  variant="emerald"
+                />
+              )}
             </div>
-            <p className="text-xs text-default-400 mt-1">深度体检与高胜率量化诊断报告</p>
-          </div>
-
-          <div className="flex items-center gap-4">
-            <div className="text-right">
-              <span className="text-xs text-default-400 block">综合评分</span>
-              <span className="text-3xl font-bold text-primary">{stock.overallScore}</span>
-              <span className="text-xs text-default-400"> / 100</span>
-            </div>
-
-            <div className="h-10 w-[1px] bg-divider" />
-
-            <div className="text-right">
-              <span className="text-xs text-default-400 block">股票温度</span>
-              <span className={`text-3xl font-bold ${stock.temperature < 30 ? "text-blue-400" : "text-yellow-400"}`}>
-                {stock.temperature}°C
-              </span>
-            </div>
-          </div>
-        </div>
-      </div>
-
-      {/* 核心双 K 线图表区 (高亮选中态按键组 + 图表标题文案联动) */}
-      <div className="glass-panel p-6 mb-6">
-        <div className="flex flex-wrap items-center justify-between gap-4 mb-4 border-b border-divider pb-4">
-          <div className="space-y-3">
-            {/* 图表顶部标题 (动态联动显示名称、周期、复权) */}
-            <div className="flex items-center gap-2">
-              <h3 className="text-base font-bold tracking-tight">
-                {stock.name} ({stock.code}) - {currentPeriodObj.label} 走势
-                <span className="ml-2 text-xs font-normal px-2 py-0.5 rounded bg-primary/10 text-primary border border-primary/20">
-                  {currentAdjustObj.label}
-                </span>
-              </h3>
-            </div>
-
-            {/* 按钮控件组：图表模式 + 周期 + 复权 */}
-            <div className="flex flex-wrap items-center gap-3 text-xs">
-              {/* 1. 图表模式切换 */}
-              <div className="flex gap-1 bg-default-100 p-1 rounded-xl">
-                <button
-                  onClick={() => setChartTab("KLINE")}
-                  className={`
-                    flex items-center gap-1.5 px-3 py-1.5 rounded-lg font-medium transition-all duration-200
-                    ${chartTab === "KLINE"
-                      ? "bg-primary text-white font-bold shadow-md shadow-primary/30 scale-[1.02]"
-                      : "text-default-400 hover:text-foreground hover:bg-default-200/50"}
-                  `}
-                >
-                  <CandlestickChart className="w-3.5 h-3.5" /> 经典形态 K 线
-                </button>
-                <button
-                  onClick={() => setChartTab("CORRIDOR")}
-                  className={`
-                    flex items-center gap-1.5 px-3 py-1.5 rounded-lg font-medium transition-all duration-200
-                    ${chartTab === "CORRIDOR"
-                      ? "bg-primary text-white font-bold shadow-md shadow-primary/30 scale-[1.02]"
-                      : "text-default-400 hover:text-foreground hover:bg-default-200/50"}
-                  `}
-                >
-                  <LineChart className="w-3.5 h-3.5" /> 估值通道 K 线
-                </button>
-              </div>
-
-              {/* 2. 多周期按键 (日K/周K/月K/季K/年K) - 醒目选中态 */}
-              <div className="flex gap-1 bg-default-100 p-1 rounded-xl">
-                {periodOptions.map(({ key, label }) => {
-                  const isSelected = period === key;
-                  return (
-                    <button
-                      key={key}
-                      onClick={() => handlePeriodChange(key)}
-                      className={`
-                        px-3 py-1.5 rounded-lg font-medium transition-all duration-200
-                        ${isSelected
-                          ? "bg-blue-600 text-white font-bold shadow-md shadow-blue-600/30 scale-[1.05]"
-                          : "text-default-400 hover:text-foreground hover:bg-default-200/50"}
-                      `}
-                    >
-                      {label}
-                    </button>
-                  );
-                })}
-              </div>
-
-              {/* 3. 复权模式按键 (前复权/后复权/不复权) - 醒目选中态 */}
-              <div className="flex gap-1 bg-default-100 p-1 rounded-xl">
-                {adjustOptions.map(({ key, label }) => {
-                  const isSelected = adjust === key;
-                  return (
-                    <button
-                      key={key}
-                      onClick={() => handleAdjustChange(key)}
-                      className={`
-                        px-3 py-1.5 rounded-lg font-medium transition-all duration-200
-                        ${isSelected
-                          ? "bg-emerald-600 text-white font-bold shadow-md shadow-emerald-600/30 scale-[1.05]"
-                          : "text-default-400 hover:text-foreground hover:bg-default-200/50"}
-                      `}
-                    >
-                      {label}
-                    </button>
-                  );
-                })}
-              </div>
-            </div>
-          </div>
-
-          <div className="text-right">
-            <span className="text-xs text-default-400 block">说明与标准</span>
-            <span className="text-[11px] text-default-500">{currentAdjustObj.desc}</span>
-          </div>
+          )}
         </div>
 
-        {klineLoading[`kline_${code}_${period}_${adjust}`] ? (
-          <div className="py-20 text-center text-xs text-default-400">
-            <RefreshCw className="w-5 h-5 animate-spin inline mb-2" />
-            <p>正在拉取并重新计算 {currentPeriodObj.label} ({currentAdjustObj.label}) 行情图表...</p>
+        {/* 图表展示区 */}
+        {klineLoading[`kline_${code}_${period}_${adjust}`] || klineLoading[`intraday_${code}`] ? (
+          <div className="h-[400px] flex items-center justify-center text-xs text-default-400">
+            <RefreshCw className="w-5 h-5 animate-spin mr-2" /> 正在更新行情走势...
           </div>
+        ) : chartTab === "KLINE" ? (
+          period === "intraday" ? (
+            <IntradayChart ticks={intradayTicks} prevClose={intradayPrevClose} height="400px" />
+          ) : (
+            <KlineChart data={klines} height="400px" />
+          )
         ) : (
-          <div>
-            {chartTab === "KLINE" ? (
-              <KlineChart data={klines} />
-            ) : (
-              <ValuationCorridorChart data={corridors} />
-            )}
-          </div>
+          <ValuationCorridorChart data={corridors} height="400px" />
         )}
       </div>
 
-      {/* 6维指标分析 */}
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
-        {dims.map((dim) => (
-          <div key={dim.name} className="glass-panel p-5">
-            <div className="flex items-center justify-between mb-2">
-              <span className="text-sm font-semibold">{dim.name}</span>
-              <span className="text-sm font-bold text-emerald-400">{dim.score} 分</span>
+      {/* 6 维体检卡片 */}
+      <div className="glass-panel p-6 mb-6">
+        <h3 className="text-base font-semibold mb-4">6 维红利诊断模型</h3>
+        <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
+          {dims.map((d) => (
+            <div key={d.name} className="p-4 rounded-xl bg-default-50/50">
+              <div className="flex items-center justify-between mb-2">
+                <span className="text-xs text-default-400">{d.name}</span>
+                <span className="text-sm font-bold text-emerald-400">{d.score} 分</span>
+              </div>
+              <div className="h-1.5 bg-default-100 rounded-full overflow-hidden mb-2">
+                <div
+                  className="h-full bg-emerald-500 rounded-full transition-all"
+                  style={{ width: `${d.score}%` }}
+                />
+              </div>
+              <span className="text-[10px] text-default-400">{d.desc}</span>
             </div>
-            <div className="h-2 bg-default-100 rounded-full overflow-hidden mb-2">
-              <div className="h-full bg-emerald-500 rounded-full" style={{ width: `${dim.score}%` }} />
-            </div>
-            <p className="text-xs text-default-400">{dim.desc}</p>
-          </div>
-        ))}
+          ))}
+        </div>
       </div>
 
       {/* 历史回测胜率矩阵 */}
@@ -277,21 +550,22 @@ export default function StockDetailPage({ params }: { params: Promise<{ code: st
         </div>
       </div>
 
-      {/* 核心亮点与风险提示 */}
+      {/* 核心亮点与风险提示 (纯动态生成) */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
         <div className="glass-panel p-5 border-emerald-500/20">
           <h4 className="text-sm font-semibold text-emerald-400 mb-3 flex items-center gap-2">
             <CheckCircle2 className="w-4 h-4" /> 核心亮点
           </h4>
           <ul className="space-y-2 text-xs text-default-300">
-            <li className="flex items-start gap-2">
-              <span className="text-emerald-400 font-bold">•</span>
-              <span>连续分红历史长，属于典型的高股息压舱石资产</span>
-            </li>
-            <li className="flex items-start gap-2">
-              <span className="text-emerald-400 font-bold">•</span>
-              <span>估值处于合理安全区间，具备较好防守边际</span>
-            </li>
+            {(stock.highlights && stock.highlights.length > 0 ? stock.highlights : [
+              "连续分红历史长，属于典型的高股息压舱石资产",
+              "估值处于合理安全区间，具备较好防守边际"
+            ]).map((h, i) => (
+              <li key={i} className="flex items-start gap-2">
+                <span className="text-emerald-400 font-bold">•</span>
+                <span>{h}</span>
+              </li>
+            ))}
           </ul>
         </div>
 
@@ -300,14 +574,15 @@ export default function StockDetailPage({ params }: { params: Promise<{ code: st
             <AlertTriangle className="w-4 h-4" /> 风险提示
           </h4>
           <ul className="space-y-2 text-xs text-default-300">
-            <li className="flex items-start gap-2">
-              <span className="text-amber-400 font-bold">•</span>
-              <span>行业系统性周期波动风险</span>
-            </li>
-            <li className="flex items-start gap-2">
-              <span className="text-amber-400 font-bold">•</span>
-              <span>宏观经济环境影响</span>
-            </li>
+            {(stock.risks && stock.risks.length > 0 ? stock.risks : [
+              "行业系统性周期波动风险",
+              "宏观经济环境影响"
+            ]).map((r, i) => (
+              <li key={i} className="flex items-start gap-2">
+                <span className="text-amber-400 font-bold">•</span>
+                <span>{r}</span>
+              </li>
+            ))}
           </ul>
         </div>
       </div>

@@ -1,14 +1,28 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { useDividendStore } from "@investscope/core";
+import { useDividendStore, type DividendStrategy } from "@investscope/core";
+import { SegmentedTabs } from "@investscope/ui";
 import {
   Thermometer,
   Search,
   Award,
   RefreshCw,
   ArrowRight,
+  TrendingUp,
+  ShieldCheck,
+  Zap,
+  Coins,
+  Scale,
 } from "lucide-react";
+
+const strategyTabs: { key: DividendStrategy; label: string; icon: any; desc: string }[] = [
+  { key: "composite",  label: "🏆 综合高胜率", icon: Award,       desc: "兼顾股息率、低 PE、低 PB 的三维量化评分降序排列" },
+  { key: "high_yield", label: "💰 绝对高股息", icon: Coins,       desc: "筛选股息率 ≥ 4.0% 的高现金流资产，按股息率降序排列" },
+  { key: "break_net",  label: "🛡️ 破净防守榜", icon: ShieldCheck, desc: "筛选市净率 PB < 1.0 且股息率 ≥ 3.0% 的破净资产，按 PB 升序排列" },
+  { key: "high_roe",   label: "👑 优质高ROE",  icon: Zap,         desc: "筛选 ROE ≥ 8.0% 且 PE ≤ 18.0 的高盈利品质资产，按 ROE 降序排列" },
+  { key: "low_pe",     label: "💎 低PE洼地",   icon: Scale,       desc: "筛选动态市盈率 PE ≤ 10.0 的估值洼地，按 PE 升序排列" },
+];
 
 const signalConfig: Record<string, { label: string; class: string }> = {
   STRONG_BUY: { label: "强烈买入", class: "bg-emerald-500/15 text-emerald-400 border border-emerald-500/20" },
@@ -20,12 +34,13 @@ const signalConfig: Record<string, { label: string; class: string }> = {
 
 export default function DividendPage() {
   const [searchCode, setSearchCode] = useState("");
-  const { temperature, topStocks, fetchTemperature, fetchTopStocks, loading } = useDividendStore();
+  const { temperature, topStocks, strategy, fetchTemperature, fetchTopStocks, setStrategy, loading } = useDividendStore();
 
   useEffect(() => {
     fetchTemperature();
     fetchTopStocks();
-  }, [fetchTemperature, fetchTopStocks]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const handleSearchSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -37,14 +52,14 @@ export default function DividendPage() {
   const tempVal = temperature?.temperature ?? 0;
   const suggestion = temperature?.suggestion ?? "板块数据加载中...";
 
-  const indicators = temperature ? [
-    { name: "PE百分位", score: temperature.indicators.pePercentile, desc: "处于历史低位，便宜" },
-    { name: "股息率", score: temperature.indicators.dividendYield, desc: "高于历史中位数" },
-    { name: "股息率/国债比", score: temperature.indicators.yieldVsBondRatio, desc: "相对债券具备性价比" },
-    { name: "超额收益60日", score: temperature.indicators.excessReturn60d, desc: "相对大盘表现" },
-    { name: "ETF资金流", score: temperature.indicators.etfFlowScore, desc: "净资金流向" },
-    { name: "破净率", score: temperature.indicators.breakNetRatio, desc: "成份股破净状况" },
-    { name: "北向资金", score: temperature.indicators.northboundChange, desc: "外资持仓动向" },
+  const indicators = temperature && temperature.indicators ? [
+    { name: "PE百分位", score: temperature.indicators.pePercentile ?? 50, desc: "处于历史低位，便宜" },
+    { name: "股息率", score: temperature.indicators.dividendYield ?? 50, desc: "高于历史中位数" },
+    { name: "股息率/国债比", score: temperature.indicators.yieldVsBondRatio ?? 50, desc: "相对债券具备性价比" },
+    { name: "超额收益60日", score: temperature.indicators.excessReturn60d ?? 50, desc: "相对大盘表现" },
+    { name: "ETF资金流", score: temperature.indicators.etfFlowScore ?? 50, desc: "净资金流向" },
+    { name: "破净率", score: temperature.indicators.breakNetRatio ?? 50, desc: "成份股破净状况" },
+    { name: "北向资金", score: temperature.indicators.northboundChange ?? 50, desc: "外资持仓动向" },
   ] : [];
 
   const filteredStocks = searchCode.trim()
@@ -148,15 +163,35 @@ export default function DividendPage() {
 
       {/* 排行表格 */}
       <div className="glass-panel overflow-hidden animate-fade-in">
-        <div className="p-5 border-b border-divider flex items-center justify-between">
-          <h2 className="text-base font-semibold flex items-center gap-2">
-            <Award className="w-5 h-5 text-amber-500" />
-            中证红利成份股全量高胜率排行 ({filteredStocks.length} 只)
-          </h2>
-          <div className="flex items-center gap-2">
-            {loading["topStocks"] && <RefreshCw className="w-3.5 h-3.5 animate-spin text-default-400" />}
-            <span className="text-xs text-default-400">点击任意行查看单股体检报告</span>
+        <div className="p-5 border-b border-divider space-y-4">
+          <div className="flex flex-wrap items-center justify-between gap-4">
+            <h2 className="text-base font-semibold flex items-center gap-2">
+              <Award className="w-5 h-5 text-amber-500" />
+              中证红利 & 高股息成份股排行榜 ({filteredStocks.length} 只)
+            </h2>
+            <div className="flex items-center gap-2">
+              {loading["topStocks"] && <RefreshCw className="w-3.5 h-3.5 animate-spin text-default-400" />}
+              <span className="text-xs text-default-400">点击任意行查看单股 360 度体检报告</span>
+            </div>
           </div>
+
+          {/* 策略切页 Tab - 统一 SegmentedTabs 规范 */}
+          <SegmentedTabs
+            items={strategyTabs}
+            value={strategy}
+            onChange={setStrategy}
+          />
+
+          {/* 当前选中的策略说明 Banner */}
+          {(() => {
+            const currentTab = strategyTabs.find((t) => t.key === strategy) || strategyTabs[0];
+            return (
+              <div className="text-xs text-default-400 bg-primary/5 border border-primary/10 rounded-xl px-3.5 py-2 flex items-center gap-2">
+                <span className="w-2 h-2 rounded-full bg-primary animate-pulse" />
+                <span><strong>当前量化策略：</strong>{currentTab.desc}</span>
+              </div>
+            );
+          })()}
         </div>
 
         {loading["topStocks"] && topStocks.length === 0 ? (
@@ -212,8 +247,16 @@ export default function DividendPage() {
                       <td className="py-3 px-4 text-right text-emerald-400 font-medium">{stock.dividendYield}%</td>
                       <td className="py-3 px-4 text-right text-default-400">{stock.pe}</td>
                       <td className="py-3 px-4 text-right text-default-400">{stock.roe}%</td>
-                      <td className="py-3 px-4 text-right">{stock.winRates?.oneYear}%</td>
-                      <td className="py-3 px-4 text-right font-medium">{stock.winRates?.threeYear}%</td>
+                      <td className="py-3 px-4 text-right">
+                        {typeof stock.winRates?.oneYear === "object" && stock.winRates.oneYear !== null
+                          ? `${stock.winRates.oneYear.winRate}%`
+                          : stock.winRates?.oneYear ? `${stock.winRates.oneYear}%` : "--"}
+                      </td>
+                      <td className="py-3 px-4 text-right font-medium">
+                        {typeof stock.winRates?.threeYear === "object" && stock.winRates.threeYear !== null
+                          ? `${stock.winRates.threeYear.winRate}%`
+                          : stock.winRates?.threeYear ? `${stock.winRates.threeYear}%` : "--"}
+                      </td>
                       <td className="py-3 px-4 text-center">
                         <span className={`inline-block text-[10px] font-medium px-2 py-0.5 rounded-full ${sig.class}`}>
                           {sig.label}

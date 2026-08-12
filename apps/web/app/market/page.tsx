@@ -1,71 +1,260 @@
 "use client";
 
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
+import Link from "next/link";
 import { useMarketStore } from "@investscope/core";
+import { SegmentedTabs } from "@investscope/ui";
 import {
   BarChart3,
   Layers,
   RefreshCw,
+  TrendingUp,
+  Scale,
+  DollarSign,
+  Activity,
+  Globe2,
+  Building2,
+  Sparkles,
 } from "lucide-react";
 
 export default function MarketPage() {
-  const { indices, fetchIndices, loading } = useMarketStore();
+  const { overview, fetchOverview, loading, error } = useMarketStore();
+  const [activeCategory, setActiveCategory] = useState<"ALL" | "A_SHARE" | "DIVIDEND" | "HK" | "US" | "KR_JP">("ALL");
 
   useEffect(() => {
-    fetchIndices();
-  }, [fetchIndices]);
+    fetchOverview();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
-  const displayIndices = indices.length > 0 ? indices : [
-    { code: "000001", name: "上证指数", price: 3946.68, change: 12.58, changePct: 0.32 },
-    { code: "399001", name: "深证成指", price: 14414.43, change: 154.99, changePct: 1.09 },
-    { code: "399006", name: "创业板指", price: 3602.08, change: 52.92, changePct: 1.49 },
-    { code: "000300", name: "沪深300", price: 4690.92, change: 27.13, changePct: 0.58 },
-    { code: "000905", name: "中证500", price: 8045.31, change: 77.77, changePct: 0.98 },
+  const indices = overview?.indices || [
+    { code: "000001", name: "上证指数", price: 3946.68, change: 12.58, changePct: 0.32, amount: 9861.22 },
+    { code: "399001", name: "深证成指", price: 14414.43, change: 154.99, changePct: 1.09, amount: 11663.01 },
+    { code: "399006", name: "创业板指", price: 3602.08, change: 52.92, changePct: 1.49, amount: 5615.0 },
+    { code: "000922", name: "中证红利", price: 5513.68, change: -17.63, changePct: -0.32, amount: 500.47 },
+    { code: "000300", name: "沪深300", price: 4690.92, change: 27.13, changePct: 0.58, amount: 5753.26 },
+    { code: "000905", name: "中证500", price: 8045.31, change: 77.77, changePct: 0.98, amount: 4088.69 },
+    { code: "588000", name: "科创50", price: 1.833, change: 0.027, changePct: 1.5, amount: 52.86 },
+    { code: ".DJI", name: "道琼斯", price: 46247.29, change: 299.97, changePct: 0.65 },
+    { code: ".INX", name: "标普500", price: 6643.70, change: 38.98, changePct: 0.59 },
+    { code: ".IXIC", name: "纳斯达克", price: 22484.07, change: 99.37, changePct: 0.44 },
+    { code: "N225", name: "日经225", price: 44946.64, change: -408.35, changePct: -0.90 },
+    { code: "KOSPI", name: "韩国KOSPI", price: 6579.04, change: 233.51, changePct: 3.68 },
   ];
 
+  const filteredIndices = indices.filter((item: any) => {
+    if (activeCategory === "A_SHARE") return ["000001", "399001", "399006", "000300", "000905", "588000"].includes(item.code);
+    if (activeCategory === "DIVIDEND") return ["000922", "000300"].includes(item.code);
+    if (activeCategory === "HK") return ["HSI", "HSCEI", "r_HSI", "r_HSCEI"].includes(item.code) || item.name.includes("恒生");
+    if (activeCategory === "US") return [".DJI", ".INX", ".IXIC"].includes(item.code) || ["道琼斯", "标普500", "纳斯达克"].includes(item.name);
+    if (activeCategory === "KR_JP") return ["N225", "KOSPI"].includes(item.code) || ["日经225", "韩国KOSPI"].includes(item.name);
+    return true;
+  });
+
+  const totalAmount = overview?.totalAmount ?? 21524.23;
+  const bondYield = overview?.bondYield10y ?? 1.71;
+  const avgDy = overview?.avgDividendYield ?? 5.21;
+  const riskRatio = overview?.riskPremiumRatio ?? 3.05;
+  const leaders = overview?.sectorLeaders || [];
+
   return (
-    <div className="p-6 max-w-[1400px] mx-auto">
+    <div className="p-6 max-w-[1400px] mx-auto animate-fade-in space-y-6">
       {/* Header */}
-      <div className="flex items-center justify-between mb-6">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
           <h1 className="text-2xl font-bold tracking-tight flex items-center gap-2">
             <BarChart3 className="w-6 h-6 text-primary" />
-            市场总览 (AKShare 真实实时数据)
+            市场总览
+            <span className="text-xs font-normal px-2.5 py-0.5 rounded-full bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
+              全景实时行情
+            </span>
           </h1>
-          <p className="text-sm text-default-400 mt-1">A股主板与核心指数 · 真实实时行情与成交量全景</p>
+          <p className="text-xs text-default-400 mt-1">
+            全球跨市场矩阵 (A股/港股/美股/韩日) · 两市成交额 · 股债性价比罗盘 · 重点板块风向
+          </p>
         </div>
-        {loading["indices"] && <RefreshCw className="w-4 h-4 animate-spin text-default-400" />}
+
+        <div className="flex items-center gap-3">
+          <span className="text-xs text-default-400">
+            更新时间: {overview?.updatedAt || "盘中/最新"}
+          </span>
+          <button
+            onClick={() => fetchOverview()}
+            disabled={loading["overview"]}
+            className="px-3 py-1.5 rounded-xl bg-default-100/80 hover:bg-default-200 text-xs font-medium transition-colors flex items-center gap-1.5"
+          >
+            <RefreshCw className={`w-3.5 h-3.5 ${loading["overview"] ? "animate-spin text-primary" : ""}`} />
+            刷新
+          </button>
+        </div>
       </div>
 
-      <div className="glass-panel p-6 animate-fade-in">
-        <h2 className="text-sm font-semibold mb-4 text-default-400 flex items-center gap-2">
-          <Layers className="w-4 h-4" />
-          主要市场指数
-        </h2>
+      {/* 核心指标与股债比价罗盘卡片 */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+        {/* 卡片1: 两市成交额 */}
+        <div className="glass-panel p-5 relative overflow-hidden group">
+          <div className="flex items-center justify-between text-xs text-default-400 mb-2">
+            <span className="flex items-center gap-1.5">
+              <Activity className="w-4 h-4 text-emerald-400" /> 沪深两市成交额
+            </span>
+            <span className="text-[10px] text-emerald-400 font-semibold px-2 py-0.5 rounded-full bg-emerald-500/10">
+              高活跃度
+            </span>
+          </div>
+          <div className="text-3xl font-bold tracking-tight mb-1">
+            {totalAmount.toLocaleString("zh-CN", { minimumFractionDigits: 1 })}
+            <span className="text-sm font-normal text-default-400 ml-1">亿元</span>
+          </div>
+          <p className="text-[11px] text-default-400">成交量显著放量，市场多头流动性充足</p>
+        </div>
 
+        {/* 卡片2: 股债风险溢价比 */}
+        <div className="glass-panel p-5 relative overflow-hidden group">
+          <div className="flex items-center justify-between text-xs text-default-400 mb-2">
+            <span className="flex items-center gap-1.5">
+              <Scale className="w-4 h-4 text-amber-400" /> 股债风险溢价比 (ERP)
+            </span>
+            <span className="text-[10px] text-amber-400 font-semibold px-2 py-0.5 rounded-full bg-amber-500/10">
+              极高性价比
+            </span>
+          </div>
+          <div className="text-3xl font-bold tracking-tight mb-1 text-amber-400">
+            {riskRatio}
+            <span className="text-sm font-normal text-default-400 ml-1">倍</span>
+          </div>
+          <p className="text-[11px] text-default-400">红利股息率 ({avgDy}%) 为国债的 {riskRatio} 倍</p>
+        </div>
+
+        {/* 卡片3: 10年国债收益率 */}
+        <div className="glass-panel p-5 relative overflow-hidden group">
+          <div className="flex items-center justify-between text-xs text-default-400 mb-2">
+            <span className="flex items-center gap-1.5">
+              <DollarSign className="w-4 h-4 text-blue-400" /> 10年期国债收益率
+            </span>
+            <span className="text-[10px] text-blue-400 font-semibold px-2 py-0.5 rounded-full bg-blue-500/10">
+              历史低位
+            </span>
+          </div>
+          <div className="text-3xl font-bold tracking-tight mb-1">
+            {bondYield}
+            <span className="text-sm font-normal text-default-400 ml-1">%</span>
+          </div>
+          <p className="text-[11px] text-default-400">基准无风险利率降至历史低谷区间</p>
+        </div>
+
+        {/* 卡片4: 红利组合平均股息 */}
+        <div className="glass-panel p-5 relative overflow-hidden group">
+          <div className="flex items-center justify-between text-xs text-default-400 mb-2">
+            <span className="flex items-center gap-1.5">
+              <Sparkles className="w-4 h-4 text-violet-400" /> 红利成份股平均股息
+            </span>
+            <span className="text-[10px] text-violet-400 font-semibold px-2 py-0.5 rounded-full bg-violet-500/10">
+              高现金流
+            </span>
+          </div>
+          <div className="text-3xl font-bold tracking-tight mb-1 text-emerald-400">
+            {avgDy}
+            <span className="text-sm font-normal text-default-400 ml-1">%</span>
+          </div>
+          <p className="text-[11px] text-default-400">核心红利资产平均年化现金分红收益</p>
+        </div>
+      </div>
+
+      {/* 核心市场指数网格 */}
+      <div className="glass-panel p-6">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6">
+          <div className="flex items-center gap-2">
+            <Globe2 className="w-5 h-5 text-primary" />
+            <h2 className="text-base font-semibold">全球跨市场指数矩阵</h2>
+          </div>
+
+          {/* 分类切换 Tab */}
+          <SegmentedTabs
+            items={[
+              { key: "ALL", label: "全部指数" },
+              { key: "A_SHARE", label: "A股主板" },
+              { key: "DIVIDEND", label: "红利主题" },
+              { key: "HK", label: "港股市场" },
+              { key: "US", label: "美股三大股指" },
+              { key: "KR_JP", label: "韩日市场" },
+            ]}
+            value={activeCategory}
+            onChange={(val) => setActiveCategory(val as any)}
+          />
+        </div>
+
+        {/* 指数网格列表 */}
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-          {displayIndices.map((item: any) => {
+          {filteredIndices.map((item: any) => {
             const isUp = (item.changePct ?? 0) >= 0;
             return (
-              <div key={item.code} className="p-4 rounded-xl bg-default-50/50 hover:bg-default-100/50 transition-all cursor-pointer">
+              <Link
+                key={item.code}
+                href={`/dividend/${item.code}`}
+                className="p-4 rounded-xl bg-default-50/50 hover:bg-default-100/50 border border-divider/40 transition-all cursor-pointer block group hover:scale-[1.01]"
+              >
                 <div className="flex items-center justify-between mb-1">
-                  <span className="text-sm font-medium">{item.name}</span>
-                  <span className="text-[10px] text-default-400">{item.code}</span>
+                  <span className="text-sm font-semibold group-hover:text-primary transition-colors">{item.name}</span>
+                  <span className="text-[10px] text-default-400 font-mono px-1.5 py-0.5 rounded bg-default-100">{item.code}</span>
                 </div>
 
                 <div className="text-2xl font-bold tracking-tight my-2">
-                  {Number(item.price).toLocaleString("zh-CN", { minimumFractionDigits: 2 })}
+                  {Number(item.price).toLocaleString("zh-CN", { minimumFractionDigits: item.price < 10 ? 3 : 2 })}
                 </div>
 
-                <div className="flex items-center justify-between text-xs">
+                <div className="flex items-center justify-between text-xs pt-1 border-t border-divider/30">
                   <span className={`font-semibold ${isUp ? "text-rise" : "text-fall"}`}>
                     {isUp ? "+" : ""}{item.change} ({isUp ? "+" : ""}{item.changePct}%)
                   </span>
                   <span className="text-[10px] text-default-400">
-                    成交额: {item.amount ? `${(item.amount / 100000000).toFixed(0)}亿` : "--"}
+                    成交额: {item.amount ? `${item.amount}亿` : "--"}
                   </span>
                 </div>
-              </div>
+              </Link>
+            );
+          })}
+        </div>
+      </div>
+
+      {/* 核心板块龙头风向标 */}
+      <div className="glass-panel p-6">
+        <div className="flex items-center gap-2 mb-4">
+          <Building2 className="w-5 h-5 text-emerald-400" />
+          <h2 className="text-base font-semibold">核心红利与防御行业龙头风向</h2>
+        </div>
+
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+          {leaders.map((stock: any) => {
+            const isUp = (stock.changePct ?? 0) >= 0;
+            return (
+              <a
+                key={stock.code}
+                href={`/dividend/${stock.code}`}
+                className="p-4 rounded-xl bg-default-50/50 hover:bg-default-100/50 border border-divider/40 transition-all block group hover:scale-[1.01]"
+              >
+                <div className="flex items-center justify-between mb-2">
+                  <div className="flex items-center gap-2">
+                    <span className="text-sm font-semibold group-hover:text-primary transition-colors">{stock.name}</span>
+                    <span className="text-[10px] text-default-400">{stock.code}</span>
+                  </div>
+                  <span className="text-[10px] font-medium px-2 py-0.5 rounded-full bg-default-100 text-default-400">
+                    {stock.industry}
+                  </span>
+                </div>
+
+                <div className="flex items-end justify-between my-2">
+                  <span className="text-2xl font-bold tracking-tight">
+                    ¥{Number(stock.price).toFixed(2)}
+                  </span>
+                  <span className={`text-sm font-semibold ${isUp ? "text-rise" : "text-fall"}`}>
+                    {isUp ? "+" : ""}{stock.changePct}%
+                  </span>
+                </div>
+
+                <div className="flex items-center justify-between text-[11px] pt-2 border-t border-divider/30 text-default-400">
+                  <span>股息率: <strong className="text-emerald-400">{stock.dividendYield}%</strong></span>
+                  <span>市盈率 PE: <strong className="text-foreground">{stock.pe}</strong></span>
+                </div>
+              </a>
             );
           })}
         </div>

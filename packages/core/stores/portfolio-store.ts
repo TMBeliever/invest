@@ -23,6 +23,8 @@ export const usePortfolioStore = create<PortfolioState>((set, get) => ({
 
   fetchSummary: async () => {
     const key = "summary";
+    if (get().loading[key]) return;
+
     set((s) => ({ loading: { ...s.loading, [key]: true }, error: { ...s.error, [key]: null } }));
     try {
       const data = await apiClient.get<PortfolioSummary>("/api/portfolio/summary");
@@ -40,6 +42,8 @@ export const usePortfolioStore = create<PortfolioState>((set, get) => ({
 
   fetchRebalanceSignals: async () => {
     const key = "rebalance";
+    if (get().loading[key]) return;
+
     set((s) => ({ loading: { ...s.loading, [key]: true }, error: { ...s.error, [key]: null } }));
     try {
       const data = await apiClient.get<RebalanceSignal[]>("/api/portfolio/rebalance-signals");

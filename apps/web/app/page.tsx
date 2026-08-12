@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect } from "react";
+import Link from "next/link";
 import { useMarketStore, useDividendStore, usePortfolioStore } from "@investscope/core";
 import {
   TrendingUp,
@@ -15,9 +16,9 @@ import {
 function IndexCard({ index }: { index: { code: string; name: string; price: number; changePct: number } }) {
   const isUp = index.changePct >= 0;
   return (
-    <div className="glass-panel p-4 animate-fade-in hover:scale-[1.02] transition-transform cursor-pointer">
+    <Link href={`/dividend/${index.code}`} className="glass-panel p-4 animate-fade-in hover:scale-[1.02] transition-transform cursor-pointer block">
       <div className="flex items-center justify-between mb-2">
-        <span className="text-xs text-default-400">{index.name}</span>
+        <span className="text-xs text-default-400 font-medium">{index.name}</span>
         {isUp ? (
           <ArrowUpRight className="w-4 h-4 text-rise" />
         ) : (
@@ -30,7 +31,7 @@ function IndexCard({ index }: { index: { code: string; name: string; price: numb
       <div className={`text-sm font-medium mt-1 ${isUp ? "text-rise" : "text-fall"}`}>
         {isUp ? "+" : ""}{index.changePct.toFixed(2)}%
       </div>
-    </div>
+    </Link>
   );
 }
 
@@ -39,7 +40,8 @@ function TemperatureWidget() {
 
   useEffect(() => {
     fetchTemperature();
-  }, [fetchTemperature]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   if (loading["temperature"]) {
     return (
@@ -104,7 +106,8 @@ function TopDividendWidget() {
 
   useEffect(() => {
     fetchTopStocks();
-  }, [fetchTopStocks]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const stocks = topStocks.slice(0, 5);
 
@@ -142,7 +145,9 @@ function TopDividendWidget() {
                 <div className="flex items-center gap-3 mt-0.5">
                   <span className="text-[10px] text-default-400">评分 {stock.overallScore}</span>
                   <span className="text-[10px] text-default-400">股息率 {stock.dividendYield}%</span>
-                  <span className="text-[10px] text-default-400">胜率 {stock.winRates?.threeYear}%</span>
+                  <span className="text-[10px] text-default-400">
+                    胜率 {typeof stock.winRates?.threeYear === "object" && stock.winRates.threeYear !== null ? stock.winRates.threeYear.winRate : stock.winRates?.threeYear}%
+                  </span>
                 </div>
               </div>
               <span className={`
@@ -167,7 +172,8 @@ function AllocationWidget() {
 
   useEffect(() => {
     fetchSummary();
-  }, [fetchSummary]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   if (loading["summary"]) {
     return (
@@ -239,7 +245,8 @@ function SentimentWidget() {
 
   useEffect(() => {
     fetchSentiment();
-  }, [fetchSentiment]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const score = sentiment?.fearGreedIndex ?? 0;
   const bondYield = sentiment?.bondYield10Y ?? 0;
@@ -271,7 +278,8 @@ export default function DashboardPage() {
 
   useEffect(() => {
     fetchIndices();
-  }, [fetchIndices]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   return (
     <div className="p-6 max-w-[1400px] mx-auto">

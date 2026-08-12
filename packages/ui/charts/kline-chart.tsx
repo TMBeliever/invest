@@ -14,6 +14,13 @@ export function KlineChart({ data, height = "450px" }: KlineChartProps) {
     return <div className="flex items-center justify-center h-48 text-xs text-default-400">暂无 K 线数据</div>;
   }
 
+  const latestItem = data[data.length - 1];
+  const prevItem = data.length > 1 ? data[data.length - 2] : null;
+  const latestPrevClose = prevItem ? prevItem.close : latestItem.open;
+  const latestChange = latestItem.close - latestPrevClose;
+  const latestChangePct = latestPrevClose > 0 ? (latestChange / latestPrevClose) * 100 : 0;
+  const latestIsUp = latestChange >= 0;
+
   const categoryData = data.map((d) => d.date);
   const values = data.map((d) => [d.open, d.close, d.low, d.high]);
   const volumes = data.map((d, i) => [i, d.volume, d.close >= d.open ? 1 : -1]);
@@ -40,27 +47,47 @@ export function KlineChart({ data, height = "450px" }: KlineChartProps) {
           if (p.seriesName === "成交量") volItem = p;
         });
 
-        let html = `<div style="font-weight:bold;margin-bottom:4px;border-bottom:1px solid #444;padding-bottom:4px;">交易日期: ${dateStr}</div>`;
+        let html = `<div style="font-weight:bold;margin-bottom:6px;border-bottom:1px solid rgba(255,255,255,0.15);padding-bottom:4px;font-size:13px;">${dateStr}</div>`;
         if (kItem && kItem.value) {
-          const [, openVal, closeVal, lowVal, highVal] = kItem.value;
-          const isUp = closeVal >= openVal;
+          const idx = kItem.dataIndex;
+          const curPoint = data[idx] || {};
+          const prevCloseVal = idx > 0 ? data[idx - 1].close : (curPoint.open ?? kItem.value[1]);
+          const closeVal = curPoint.close ?? kItem.value[2];
+          const openVal = curPoint.open ?? kItem.value[1];
+          const lowVal = curPoint.low ?? kItem.value[3];
+          const highVal = curPoint.high ?? kItem.value[4];
+
+          const changeVal = closeVal - prevCloseVal;
+          const changePctVal = prevCloseVal > 0 ? (changeVal / prevCloseVal) * 100 : 0;
+          const isUp = changeVal >= 0;
           const color = isUp ? "#ef4444" : "#22c55e";
+          const sign = isUp ? "+" : "";
+
           html += `
-            <div style="color:${color};margin-bottom:2px;">开盘价: <strong>${openVal}</strong> 元</div>
-            <div style="color:${color};margin-bottom:2px;">收盘价: <strong>${closeVal}</strong> 元</div>
-            <div style="color:#aaa;margin-bottom:2px;">最高价: ${highVal} 元</div>
-            <div style="color:#aaa;margin-bottom:2px;">最低价: ${lowVal} 元</div>
+            <div style="display:flex;justify-content:space-between;gap:16px;margin-bottom:3px;">
+              <span style="color:#aaa;">收盘价:</span>
+              <strong style="color:${color};">${closeVal.toFixed(2)}</strong>
+            </div>
+            <div style="display:flex;justify-content:space-between;gap:16px;margin-bottom:3px;">
+              <span style="color:#aaa;">今日涨跌:</span>
+              <strong style="color:${color};">${sign}${changeVal.toFixed(2)} (${sign}${changePctVal.toFixed(2)}%)</strong>
+            </div>
+            <div style="display:flex;justify-content:space-between;gap:16px;margin-bottom:3px;font-size:11px;color:#888;">
+              <span>开: ${openVal.toFixed(2)}</span>
+              <span>高: ${highVal.toFixed(2)}</span>
+              <span>低: ${lowVal.toFixed(2)}</span>
+            </div>
           `;
         }
         if (volItem) {
           const volVal = volItem.value ? (typeof volItem.value === "object" ? volItem.value.value : volItem.value) : 0;
-          html += `<div style="color:#3b82f6;margin-top:4px;">成交量: ${(volVal / 10000).toFixed(2)} 万股</div>`;
+          html += `<div style="color:#3b82f6;margin-top:4px;font-size:11px;">成交量: ${(volVal / 10000).toFixed(2)} 万</div>`;
         }
         return html;
       },
     },
     axisPointer: {
-      link: [{ xAxisIndex: "all" }],
+      link: [{ xAxisIndex: [0, 1] }],
       label: { backgroundColor: "#777" },
     },
     legend: {
@@ -165,5 +192,25 @@ export function KlineChart({ data, height = "450px" }: KlineChartProps) {
     ],
   };
 
-  return <ReactECharts option={option} style={{ height, width: "100%" }} />;
+  return (
+    <div className="w-full">
+      {/* 顶部 K 线实时涨跌概览看盘条 */}
+      <div className="flex flex-wrap items-center justify-between gap-3 mb-2 px-3 py-2 rounded-xl bg-default-100/50 border border-divider/40 text-xs">
+        <div className="flex items-center gap-3">
+          <span className="text-default-400 font-medium">最新收盘:</span>
+          <span className="font-bold text-sm tracking-tight">{latestItem.close.toFixed(2)}</span>
+          <span className={`font-bold px-2 py-0.5 rounded ${latestIsUp ? "bg-rise text-rise" : "bg-fall text-fall"}`}>
+            {latestIsUp ? "+" : ""}{latestChange.toFixed(2)} ({latestIsUp ? "+" : ""}{latestChangePct.toFixed(2)}%)
+          </span>
+        </div>
+        <div className="flex items-center gap-3 text-default-400 font-mono text-[11px]">
+          <span>开盘: <strong className="text-foreground">{latestItem.open.toFixed(2)}</strong></span>
+          <span>最高: <strong className="text-foreground">{latestItem.high.toFixed(2)}</strong></span>
+          <span>最低: <strong className="text-foreground">{latestItem.low.toFixed(2)}</strong></span>
+          <span>成交量: <strong className="text-foreground">{(latestItem.volume / 10000).toFixed(1)}万</strong></span>
+        </div>
+      </div>
+      <ReactECharts option={option} style={{ height, width: "100%" }} />
+    </div>
+  );
 }
