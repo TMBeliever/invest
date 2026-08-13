@@ -173,29 +173,52 @@ _OTC_FUND_NAV_CACHE_TTL_SECONDS = 6 * 3600  # 每日只公布一次净值，缓�
 
 def get_otc_fund_nav(code: str) -> Optional[Dict[str, Any]]:
     """
-    获取场外开放式基金最新一日收盘单位净值 (fund_open_fund_info_em)。
-    注意：这不是盘中实时估值，只有基金公司披露的 T-1 (或当日收盘后) 净值。
-    返回 {"navPrice": float, "navDate": str, "changePct": float} 或 None（查询失败）。
+    获取场外开放式基金最新一日收盘单位净值与基金官方名称。
+    优先调用 Eastmoney 基金搜索接口（极速获取名称与最新净值），失败时走 ak.fund_open_fund_info_em。
+    返回 {"fundName": str, "navPrice": float, "navDate": str, "changePct": float} 或 None。
     """
     cached = _OTC_FUND_NAV_CACHE.get(code)
     if cached and (datetime.datetime.now().timestamp() - cached["_fetchedAt"]) < _OTC_FUND_NAV_CACHE_TTL_SECONDS:
         return cached["data"]
 
     try:
+        url = f"http://fundsuggest.eastmoney.com/FundSearch/api/FundSearchAPI.ashx?m=1&key={code}"
+        resp = requests.get(url, timeout=3).json()
+        datas = resp.get("Datas", [])
+        if datas:
+            item = datas[0]
+            base = item.get("FundBaseInfo", {})
+            name = item.get("NAME") or base.get("SHORTNAME")
+            dwjz = base.get("DWJZ")
+            fsrq = base.get("FSRQ")
+            if name and dwjz is not None:
+                data = {
+                    "fundName": name,
+                    "navPrice": float(dwjz),
+                    "navDate": str(fsrq) if fsrq else None,
+                    "changePct": None,
+                }
+                _OTC_FUND_NAV_CACHE[code] = {"data": data, "_fetchedAt": datetime.datetime.now().timestamp()}
+                return data
+    except Exception as e:
+        logger.warning(f"Eastmoney 基金极速搜索失败 [{code}]: {e}")
+
+    try:
         df = ak.fund_open_fund_info_em(symbol=code, indicator="单位净值走势")
-        if df is None or df.empty:
-            return None
-        last = df.iloc[-1]
-        data = {
-            "navPrice": float(last["单位净值"]),
-            "navDate": str(last["净值日期"]),
-            "changePct": float(last["日增长率"]) if pd.notna(last["日增长率"]) else None,
-        }
-        _OTC_FUND_NAV_CACHE[code] = {"data": data, "_fetchedAt": datetime.datetime.now().timestamp()}
-        return data
+        if df is not None and not df.empty:
+            last = df.iloc[-1]
+            data = {
+                "fundName": None,
+                "navPrice": float(last["单位净值"]),
+                "navDate": str(last["净值日期"]),
+                "changePct": float(last["日增长率"]) if pd.notna(last["日增长率"]) else None,
+            }
+            _OTC_FUND_NAV_CACHE[code] = {"data": data, "_fetchedAt": datetime.datetime.now().timestamp()}
+            return data
     except Exception as e:
         logger.error(f"场外基金净值拉取失败 [{code}]: {e}")
-        return None
+
+    return None
 
 
 class AKShareClient:

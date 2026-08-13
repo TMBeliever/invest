@@ -238,43 +238,61 @@ def quick_lookup_asset(code: str) -> Dict[str, Any]:
 
     category = "STOCK"
     fund_type = None
-
-    if len(c) == 6 and c.isdigit():
-        prefix2 = c[:2]
-        if prefix2 in ("51", "52", "56", "58", "15", "16", "50"):
-            category = "FUND"
-            fund_type = "EXCHANGE"
-        elif prefix2 in ("60", "68", "00", "30", "43", "83", "87", "88", "92"):
-            category = "STOCK"
-            fund_type = None
-        else:
-            category = "FUND"
-            fund_type = "OTC"
-
     name = None
     current_price = None
     dividend_yield = None
 
-    if category == "STOCK" or fund_type == "EXCHANGE":
+    if len(c) == 6 and c.isdigit():
+        prefix2 = c[:2]
+        # 1. 场内 ETF / LOF 基金: 51, 52, 56, 58, 15, 16, 50
+        if prefix2 in ("51", "52", "56", "58", "15", "16", "50"):
+            category = "FUND"
+            fund_type = "EXCHANGE"
+            quotes = _batch_tencent_quote([c])
+            quote = quotes.get(c)
+            if quote:
+                name = quote.get("name")
+                current_price = quote.get("price")
+                dividend_yield = quote.get("dividendYield")
+
+        # 2. 明确的 A 股主板/科创/创业/北交股票: 60, 68, 30, 43, 83, 87, 88, 92
+        elif prefix2 in ("60", "68", "30", "43", "83", "87", "88", "92"):
+            category = "STOCK"
+            fund_type = None
+            quotes = _batch_tencent_quote([c])
+            quote = quotes.get(c)
+            if quote:
+                name = quote.get("name")
+                current_price = quote.get("price")
+                dividend_yield = quote.get("dividendYield")
+
+        # 3. 00 开头等既可能是深市股票也可能是场外公募基金的代码
+        else:
+            nav = get_otc_fund_nav(c)
+            if nav and nav.get("fundName"):
+                category = "FUND"
+                fund_type = "OTC"
+                name = nav.get("fundName")
+                current_price = nav.get("navPrice")
+            else:
+                category = "STOCK"
+                fund_type = None
+                quotes = _batch_tencent_quote([c])
+                quote = quotes.get(c)
+                if quote:
+                    name = quote.get("name")
+                    current_price = quote.get("price")
+                    dividend_yield = quote.get("dividendYield")
+    else:
+        # 4. 美股或港股股票
+        category = "STOCK"
+        fund_type = None
         quotes = _batch_tencent_quote([c])
         quote = quotes.get(c)
         if quote:
             name = quote.get("name")
             current_price = quote.get("price")
             dividend_yield = quote.get("dividendYield")
-    elif fund_type == "OTC":
-        nav = get_otc_fund_nav(c)
-        if nav:
-            name = nav.get("fundName")
-            current_price = nav.get("navPrice")
-
-    if not name:
-        from app.data.akshare_client import search_stocks
-        search_res = search_stocks(c)
-        if search_res:
-            matched = search_res[0]
-            name = matched.get("name")
-            current_price = matched.get("price")
 
     return {
         "code": c,
