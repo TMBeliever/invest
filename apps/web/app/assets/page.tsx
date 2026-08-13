@@ -41,6 +41,7 @@ const EMPTY_FORM: AssetPayload = {
   annualRate: undefined,
   depositType: "DEMAND",
   maturityDate: "",
+  fundType: "EXCHANGE",
   notes: "",
 };
 
@@ -91,6 +92,7 @@ export default function AssetsPage() {
       annualRate: asset.annualRate ?? undefined,
       depositType: asset.depositType ?? "DEMAND",
       maturityDate: asset.maturityDate || "",
+      fundType: asset.fundType ?? "EXCHANGE",
       notes: asset.notes || "",
     });
     setFormError(null);
@@ -114,6 +116,10 @@ export default function AssetsPage() {
       setFormError("股票/基金需要填写代码");
       return;
     }
+    if (form.category === "FUND" && !form.fundType) {
+      setFormError("请选择基金类型：场内 ETF 或场外基金");
+      return;
+    }
 
     setSubmitting(true);
     try {
@@ -132,6 +138,7 @@ export default function AssetsPage() {
 
   const isPositionCategory = form.category === "STOCK" || form.category === "FUND";
   const isRateCategory = form.category === "DEPOSIT" || form.category === "WEALTH";
+  const isFundCategory = form.category === "FUND";
 
   return (
     <div className="p-6 max-w-[1400px] mx-auto">
@@ -229,14 +236,30 @@ export default function AssetsPage() {
                 const isPosition = a.category === "STOCK" || a.category === "FUND";
                 const profit = a.profit ?? 0;
                 const profitUp = profit >= 0;
+                const isOtcFund = a.category === "FUND" && a.fundType === "OTC";
 
                 return (
                   <tr key={a.id} className="border-b border-divider/50 hover:bg-default-50/50 transition-colors">
                     <td className="py-3.5 px-4">
                       <div className="font-medium flex items-center gap-1.5">
                         {a.name}
+                        {isOtcFund ? (
+                          <span
+                            className="text-[9px] px-1.5 py-0.5 rounded-full bg-amber-500/15 text-amber-400 font-medium"
+                            title={`场外基金：净值为 T-1 日收盘披露数据，非盘中实时价格${a.navDate ? `（净值日期 ${a.navDate}）` : ""}`}
+                          >
+                            场外 · 非实时
+                          </span>
+                        ) : a.category === "FUND" ? (
+                          <span
+                            className="text-[9px] px-1.5 py-0.5 rounded-full bg-emerald-500/15 text-emerald-400 font-medium"
+                            title="场内 ETF：交易所秒级实时行情"
+                          >
+                            场内 · 实时
+                          </span>
+                        ) : null}
                         {a.dataStale && (
-                          <span title="实时行情获取失败，暂按成本价估算">
+                          <span title={isOtcFund ? "场外基金净值获取失败，暂按成本价估算" : "实时行情获取失败，暂按成本价估算"}>
                             <AlertTriangle className="w-3.5 h-3.5 text-amber-400" />
                           </span>
                         )}
@@ -254,6 +277,9 @@ export default function AssetsPage() {
                     </td>
                     <td className="py-3.5 px-4 text-right font-mono font-medium">
                       {isPosition ? `¥${a.currentPrice ?? "--"}` : "--"}
+                      {isOtcFund && a.navDate && (
+                        <div className="text-[9px] text-default-400 font-normal">净值日 {a.navDate}</div>
+                      )}
                     </td>
                     <td className="py-3.5 px-4 text-right font-mono font-semibold">
                       {formatMoney(a.currentValue)}
@@ -295,10 +321,10 @@ export default function AssetsPage() {
 
       {/* 添加/编辑弹窗 */}
       {modalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
-          <div className="w-full max-w-md glass-panel p-6 animate-fade-in">
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4">
+          <div className="w-full max-w-md bg-background border border-divider rounded-2xl shadow-2xl p-6 animate-fade-in text-foreground max-h-[90vh] overflow-y-auto">
             <div className="flex items-center justify-between mb-5">
-              <h3 className="text-base font-semibold">{editingId !== null ? "编辑资产" : "添加资产"}</h3>
+              <h3 className="text-base font-semibold text-foreground">{editingId !== null ? "编辑资产" : "添加资产"}</h3>
               <button onClick={() => setModalOpen(false)} className="text-default-400 hover:text-foreground">
                 <X className="w-5 h-5" />
               </button>
@@ -312,11 +338,11 @@ export default function AssetsPage() {
                     <button
                       key={cat}
                       type="button"
-                      onClick={() => setForm((f) => ({ ...f, category: cat }))}
+                      onClick={() => setForm((f) => ({ ...f, category: cat, fundType: cat === "FUND" ? (f.fundType ?? "EXCHANGE") : f.fundType }))}
                       className={`py-2 rounded-lg text-xs font-medium transition-all ${
                         form.category === cat
                           ? "bg-primary/15 text-primary border border-primary/30"
-                          : "bg-default-100 text-default-400 border border-transparent hover:text-foreground"
+                          : "bg-default-100 text-default-500 border border-transparent hover:text-foreground"
                       }`}
                     >
                       {CATEGORY_META[cat].icon}
@@ -335,7 +361,7 @@ export default function AssetsPage() {
                   value={form.name}
                   onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))}
                   required
-                  className="w-full px-3.5 py-2.5 rounded-xl bg-default-100 text-sm border border-transparent focus:border-primary focus:outline-none"
+                  className="w-full px-3.5 py-2.5 rounded-xl bg-default-100 text-sm text-foreground placeholder:text-default-400 border border-transparent focus:border-primary focus:outline-none"
                 />
               </div>
 
@@ -347,8 +373,40 @@ export default function AssetsPage() {
                     value={form.code || ""}
                     onChange={(e) => setForm((f) => ({ ...f, code: e.target.value }))}
                     placeholder="如 600036"
-                    className="w-full px-3.5 py-2.5 rounded-xl bg-default-100 text-sm border border-transparent focus:border-primary focus:outline-none"
+                    className="w-full px-3.5 py-2.5 rounded-xl bg-default-100 text-sm text-foreground placeholder:text-default-400 border border-transparent focus:border-primary focus:outline-none"
                   />
+                </div>
+              )}
+
+              {isFundCategory && (
+                <div>
+                  <label className="block text-xs font-medium text-default-400 mb-1.5">基金类型</label>
+                  <div className="flex gap-2">
+                    <button
+                      type="button"
+                      onClick={() => setForm((f) => ({ ...f, fundType: "EXCHANGE" }))}
+                      className={`flex-1 py-2 rounded-lg text-xs font-medium transition-all ${
+                        form.fundType === "EXCHANGE"
+                          ? "bg-primary/15 text-primary border border-primary/30"
+                          : "bg-default-100 text-default-500 border border-transparent hover:text-foreground"
+                      }`}
+                    >
+                      场内 ETF
+                      <div className="text-[10px] mt-0.5 opacity-70">交易所秒级实时行情</div>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setForm((f) => ({ ...f, fundType: "OTC" }))}
+                      className={`flex-1 py-2 rounded-lg text-xs font-medium transition-all ${
+                        form.fundType === "OTC"
+                          ? "bg-primary/15 text-primary border border-primary/30"
+                          : "bg-default-100 text-default-500 border border-transparent hover:text-foreground"
+                      }`}
+                    >
+                      场外基金
+                      <div className="text-[10px] mt-0.5 opacity-70">T-1 日收盘净值，非实时</div>
+                    </button>
+                  </div>
                 </div>
               )}
 
@@ -363,7 +421,7 @@ export default function AssetsPage() {
                       step="any"
                       value={form.shares ?? ""}
                       onChange={(e) => setForm((f) => ({ ...f, shares: e.target.value ? Number(e.target.value) : undefined }))}
-                      className="w-full px-3.5 py-2.5 rounded-xl bg-default-100 text-sm border border-transparent focus:border-primary focus:outline-none"
+                      className="w-full px-3.5 py-2.5 rounded-xl bg-default-100 text-sm text-foreground placeholder:text-default-400 border border-transparent focus:border-primary focus:outline-none"
                     />
                   </div>
                   <div>
@@ -373,7 +431,7 @@ export default function AssetsPage() {
                       step="any"
                       value={form.costPrice ?? ""}
                       onChange={(e) => setForm((f) => ({ ...f, costPrice: e.target.value ? Number(e.target.value) : undefined }))}
-                      className="w-full px-3.5 py-2.5 rounded-xl bg-default-100 text-sm border border-transparent focus:border-primary focus:outline-none"
+                      className="w-full px-3.5 py-2.5 rounded-xl bg-default-100 text-sm text-foreground placeholder:text-default-400 border border-transparent focus:border-primary focus:outline-none"
                     />
                   </div>
                 </div>
@@ -385,7 +443,7 @@ export default function AssetsPage() {
                     step="any"
                     value={form.amount ?? ""}
                     onChange={(e) => setForm((f) => ({ ...f, amount: e.target.value ? Number(e.target.value) : undefined }))}
-                    className="w-full px-3.5 py-2.5 rounded-xl bg-default-100 text-sm border border-transparent focus:border-primary focus:outline-none"
+                    className="w-full px-3.5 py-2.5 rounded-xl bg-default-100 text-sm text-foreground placeholder:text-default-400 border border-transparent focus:border-primary focus:outline-none"
                   />
                 </div>
               )}
@@ -399,7 +457,7 @@ export default function AssetsPage() {
                       step="any"
                       value={form.annualRate ?? ""}
                       onChange={(e) => setForm((f) => ({ ...f, annualRate: e.target.value ? Number(e.target.value) : undefined }))}
-                      className="w-full px-3.5 py-2.5 rounded-xl bg-default-100 text-sm border border-transparent focus:border-primary focus:outline-none"
+                      className="w-full px-3.5 py-2.5 rounded-xl bg-default-100 text-sm text-foreground placeholder:text-default-400 border border-transparent focus:border-primary focus:outline-none"
                     />
                   </div>
                   <div>
@@ -408,7 +466,7 @@ export default function AssetsPage() {
                       type="date"
                       value={form.maturityDate || ""}
                       onChange={(e) => setForm((f) => ({ ...f, maturityDate: e.target.value }))}
-                      className="w-full px-3.5 py-2.5 rounded-xl bg-default-100 text-sm border border-transparent focus:border-primary focus:outline-none"
+                      className="w-full px-3.5 py-2.5 rounded-xl bg-default-100 text-sm text-foreground placeholder:text-default-400 border border-transparent focus:border-primary focus:outline-none"
                     />
                   </div>
                 </div>
@@ -426,7 +484,7 @@ export default function AssetsPage() {
                         className={`flex-1 py-2 rounded-lg text-xs font-medium transition-all ${
                           form.depositType === t
                             ? "bg-primary/15 text-primary border border-primary/30"
-                            : "bg-default-100 text-default-400 border border-transparent"
+                            : "bg-default-100 text-default-500 border border-transparent hover:text-foreground"
                         }`}
                       >
                         {t === "DEMAND" ? "活期" : "定期"}
@@ -442,7 +500,7 @@ export default function AssetsPage() {
                   type="text"
                   value={form.notes || ""}
                   onChange={(e) => setForm((f) => ({ ...f, notes: e.target.value }))}
-                  className="w-full px-3.5 py-2.5 rounded-xl bg-default-100 text-sm border border-transparent focus:border-primary focus:outline-none"
+                  className="w-full px-3.5 py-2.5 rounded-xl bg-default-100 text-sm text-foreground placeholder:text-default-400 border border-transparent focus:border-primary focus:outline-none"
                 />
               </div>
 
@@ -456,7 +514,7 @@ export default function AssetsPage() {
                 <button
                   type="button"
                   onClick={() => setModalOpen(false)}
-                  className="flex-1 py-2.5 rounded-xl bg-default-100 text-sm font-medium hover:bg-default-200 transition-colors"
+                  className="flex-1 py-2.5 rounded-xl bg-default-100 text-foreground text-sm font-medium hover:bg-default-200 transition-colors"
                 >
                   取消
                 </button>

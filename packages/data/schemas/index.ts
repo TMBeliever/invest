@@ -431,6 +431,9 @@ export type AuthResponse = z.infer<typeof AuthResponseSchema>;
 export const AssetCategorySchema = z.enum(["DEPOSIT", "STOCK", "FUND", "WEALTH", "OTHER"]);
 export type AssetCategory = z.infer<typeof AssetCategorySchema>;
 
+export const FundTypeSchema = z.enum(["EXCHANGE", "OTC"]);
+export type FundType = z.infer<typeof FundTypeSchema>;
+
 export const AssetItemSchema = z.object({
   id: z.number(),
   category: AssetCategorySchema,
@@ -449,6 +452,7 @@ export const AssetItemSchema = z.object({
   maturityDate: z.string().nullable().optional(),
 
   // 股票/基金
+  fundType: FundTypeSchema.nullable().optional(), // 仅 category=FUND 时有值：EXCHANGE 场内ETF / OTC 场外基金
   shares: z.number().nullable().optional(),
   costPrice: z.number().nullable().optional(),
   currentPrice: z.number().nullable().optional(),
@@ -456,6 +460,8 @@ export const AssetItemSchema = z.object({
   profitPct: z.number().nullable().optional(),
   dividendYield: z.number().nullable().optional(),
   dataStale: z.boolean().nullable().optional(),
+  priceAsOf: z.enum(["REALTIME", "PREV_CLOSE_NAV"]).nullable().optional(), // 价格时效：秒级实时 / 场外基金T-1收盘净值
+  navDate: z.string().nullable().optional(), // 场外基金净值披露日期
 });
 export type AssetItem = z.infer<typeof AssetItemSchema>;
 
@@ -490,5 +496,6 @@ export type AssetPayload = {
   annualRate?: number | null;
   depositType?: "DEMAND" | "FIXED" | null;
   maturityDate?: string | null;
+  fundType?: FundType | null;
   notes?: string | null;
 };

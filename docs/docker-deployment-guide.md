@@ -8,17 +8,18 @@
 
 InvestScope 采用标准的**多容器架构 (Multi-Container Architecture)**：
 
-- **容器内部服务默认端口**：前端 `3000`，后端 `8000`（保持项目原生干净结构）。
+- **容器内部服务默认端口**：前端 `3000`，后端 `8000`（保持项目原生结构）。
 - **宿主机重映射端口**：
-  - 前端服务映射至宿主机 **`8006`** 端口 (`8006:3000`)
-  - 后端 API 映射至宿主机 **`3006`** 端口 (`3006:8000`)
+  - 前端服务映射至宿主机 **`3006`** 端口 (`3006:3000`)
+  - 后端 API 映射至宿主机 **`8006`** 端口 (`8006:8000`)
+- **数据库隔离挂载**：挂载宿主机 `./docker-data/db` 至容器内 `/app/docker-db`，通过 `DB_PATH` 环境变量指向独立的 SQLite 数据库文件，防止数据卷映射覆盖后端代码。
 
 ```
                              外部浏览器 / 用户访问
                                       │
                          ┌────────────┴────────────┐
                          │   宿主机暴露端口        │
-                         │   Web: 8006 / API: 3006 │
+                         │   Web: 3006 / API: 8006 │
                          └────────────┬────────────┘
                                       │
                      ┌────────────────┴──────────────┐
@@ -46,25 +47,13 @@ InvestScope 采用标准的**多容器架构 (Multi-Container Architecture)**：
 
 ---
 
-## 2. 配置文件清单
-
-| 文件路径 | 作用说明 | 端口说明 |
-| :--- | :--- | :--- |
-| **`docker-compose.yml`** | 根目录容器编排文件，宿主机端口映射 | 前端 `8006:3000`，后端 `3006:8000` |
-| **`server/Dockerfile`** | FastAPI 后端镜像构建脚本 | 容器内暴露 `8000` |
-| **`apps/web/Dockerfile`** | Next.js 前端 Multi-Stage 构建脚本 | 容器内暴露 `3000` |
-| **`server/requirements.txt`** | Python 后端依赖包清单 | — |
-| **`.dockerignore`** | 根目录构建过滤规则 | — |
-
----
-
-## 3. 核心 `docker-compose.yml` 示例
+## 2. 核心 `docker-compose.yml` 配置文件
 
 ```yaml
 version: '3.8'
 
 services:
-  # 1. Python FastAPI 后端服务 (宿主机 3006 -> 容器 8000)
+  # 1. Python FastAPI 后端服务 (宿主机 8006 -> 容器 8000)
   server:
     build:
       context: ./server
@@ -72,14 +61,16 @@ services:
     container_name: investscope-server
     restart: always
     ports:
-      - "3006:8000"
+      - "8006:8000"
     volumes:
-      - ./docker-data/db:/app/app/data
+      - ./docker-data/db:/app/docker-db
     environment:
       - PYTHONUNBUFFERED=1
+      - PYTHONPATH=/app
+      - DB_PATH=/app/docker-db/investscope.db
       - TZ=Asia/Shanghai
 
-  # 2. Next.js 前端服务 (宿主机 8006 -> 容器 3000)
+  # 2. Next.js 前端服务 (宿主机 3006 -> 容器 3000)
   web:
     build:
       context: .
@@ -87,9 +78,9 @@ services:
     container_name: investscope-web
     restart: always
     ports:
-      - "8006:3000"
+      - "3006:3000"
     environment:
-      - NEXT_PUBLIC_API_URL=http://localhost:3006
+      - NEXT_PUBLIC_API_URL=http://localhost:8006
       - TZ=Asia/Shanghai
     depends_on:
       - server
@@ -97,13 +88,13 @@ services:
 
 ---
 
-## 4. 启动与访问
+## 3. 启动与验证
 
 ```bash
 # 一键启动服务
 docker compose up -d --build
 
 # 访问服务：
-# 前端页面：http://<服务器IP>:8006
-# 后端 API：http://<服务器IP>:3006
+# 前端页面：http://<服务器IP>:3006
+# 后端 API：http://<服务器IP>:8006
 ```

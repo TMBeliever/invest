@@ -4,6 +4,7 @@ WORKDIR /app
 
 # 设置环境变量与中国时区
 ENV PYTHONUNBUFFERED=1 \
+    PYTHONPATH=/app \
     TZ=Asia/Shanghai
 
 RUN ln -snf /usr/share/zoneinfo/$TZ /etc/localtime && echo $TZ > /etc/timezone

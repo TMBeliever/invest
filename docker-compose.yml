@@ -1,7 +1,7 @@
 version: '3.8'
 
 services:
-  # 1. Python FastAPI 后端服务 (宿主机暴露 8006 端口 -> 容器内 8000 端口)
+  # 1. Python FastAPI 后端服务 (宿主机 8006 端口 -> 容器 8000 端口)
   server:
     build:
       context: ./server
@@ -11,13 +11,15 @@ services:
     ports:
       - "8006:8000"
     volumes:
-      # 持久化挂载 SQLite 数据库，避免容器重启清空数据
-      - ./docker-data/db:/app/app/data
+      # 持久化挂载 SQLite 数据库到独立的 docker-db 目录，避免覆盖代码
+      - ./docker-data/db:/app/docker-db
     environment:
       - PYTHONUNBUFFERED=1
+      - PYTHONPATH=/app
+      - DB_PATH=/app/docker-db/investscope.db
       - TZ=Asia/Shanghai
 
-  # 2. Next.js 前端服务 (宿主机暴露 3006 端口 -> 容器内 3000 端口)
+  # 2. Next.js 前端服务 (宿主机 3006 端口 -> 容器 3000 端口)
   web:
     build:
       context: .
@@ -27,7 +29,7 @@ services:
     ports:
       - "3006:3000"
     environment:
-      - NEXT_PUBLIC_API_URL=http://localhost:3006
+      - NEXT_PUBLIC_API_URL=http://localhost:8006
       - TZ=Asia/Shanghai
     depends_on:
       - server

@@ -164,6 +164,40 @@ def _batch_tencent_quote(codes: List[str], timeout: int = 4) -> Dict[str, Dict[s
     return result
 
 
+# ─────────────────────────────────────────────
+# 场外开放式基金：每日收盘净值（T-1 日，非盘中实时）
+# ─────────────────────────────────────────────
+_OTC_FUND_NAV_CACHE: Dict[str, Dict[str, Any]] = {}
+_OTC_FUND_NAV_CACHE_TTL_SECONDS = 6 * 3600  # 每日只公布一次净值，缓存 6 小时足够
+
+
+def get_otc_fund_nav(code: str) -> Optional[Dict[str, Any]]:
+    """
+    获取场外开放式基金最新一日收盘单位净值 (fund_open_fund_info_em)。
+    注意：这不是盘中实时估值，只有基金公司披露的 T-1 (或当日收盘后) 净值。
+    返回 {"navPrice": float, "navDate": str, "changePct": float} 或 None（查询失败）。
+    """
+    cached = _OTC_FUND_NAV_CACHE.get(code)
+    if cached and (datetime.datetime.now().timestamp() - cached["_fetchedAt"]) < _OTC_FUND_NAV_CACHE_TTL_SECONDS:
+        return cached["data"]
+
+    try:
+        df = ak.fund_open_fund_info_em(symbol=code, indicator="单位净值走势")
+        if df is None or df.empty:
+            return None
+        last = df.iloc[-1]
+        data = {
+            "navPrice": float(last["单位净值"]),
+            "navDate": str(last["净值日期"]),
+            "changePct": float(last["日增长率"]) if pd.notna(last["日增长率"]) else None,
+        }
+        _OTC_FUND_NAV_CACHE[code] = {"data": data, "_fetchedAt": datetime.datetime.now().timestamp()}
+        return data
+    except Exception as e:
+        logger.error(f"场外基金净值拉取失败 [{code}]: {e}")
+        return None
+
+
 class AKShareClient:
     """
     行情数据客户端。

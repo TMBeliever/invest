@@ -4,7 +4,7 @@ from typing import Any, Dict, List, Optional
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 
-from app.data.akshare_client import _batch_tencent_quote
+from app.data.akshare_client import _batch_tencent_quote, get_otc_fund_nav
 from app.data.storage import storage_db
 
 logger = logging.getLogger(__name__)
@@ -29,6 +29,7 @@ class AssetPayload(BaseModel):
     annualRate: Optional[float] = None
     depositType: Optional[str] = None
     maturityDate: Optional[str] = None
+    fundType: Optional[str] = None
     notes: Optional[str] = None
 
     def to_storage_dict(self) -> Dict[str, Any]:
@@ -42,17 +43,24 @@ class AssetPayload(BaseModel):
             "annual_rate": self.annualRate,
             "deposit_type": self.depositType,
             "maturity_date": self.maturityDate,
+            "fund_type": self.fundType,
             "notes": self.notes,
         }
 
 
 def _enrich_assets(raw_assets: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
-    """按类别自动算账：股票/场内基金走实时行情，存款/理财/其他按录入值计算"""
-    # STOCK 和 FUND（场内 ETF）统一走腾讯行情批量接口
-    quote_codes = [
-        a["code"] for a in raw_assets
-        if a["category"] in ("STOCK", "FUND") and a.get("code")
-    ]
+    """
+    按类别自动算账：
+    - STOCK / 场内 ETF (FUND + fund_type=EXCHANGE)：走腾讯行情批量接口，秒级实时价
+    - 场外基金 (FUND + fund_type=OTC)：走每日收盘净值接口，T-1 日数据，非实时
+    - 存款/理财/其他：按录入值计算
+    """
+    is_exchange_traded = lambda a: a["category"] == "STOCK" or (
+        a["category"] == "FUND" and (a.get("fund_type") or "EXCHANGE") != "OTC"
+    )
+    is_otc_fund = lambda a: a["category"] == "FUND" and a.get("fund_type") == "OTC"
+
+    quote_codes = [a["code"] for a in raw_assets if is_exchange_traded(a) and a.get("code")]
     quotes = _batch_tencent_quote(quote_codes) if quote_codes else {}
 
     enriched = []
@@ -66,7 +74,7 @@ def _enrich_assets(raw_assets: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
             "notes": a.get("notes"),
         }
 
-        if category in ("STOCK", "FUND"):
+        if is_exchange_traded(a):
             shares = a.get("shares") or 0.0
             cost_price = a.get("cost_price") or 0.0
             quote = quotes.get(a.get("code")) if a.get("code") else None
@@ -83,6 +91,7 @@ def _enrich_assets(raw_assets: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
             ) else 0.0
 
             item.update({
+                "fundType": "EXCHANGE" if category == "FUND" else None,
                 "shares": shares,
                 "costPrice": cost_price,
                 "currentPrice": current_price,
@@ -92,6 +101,33 @@ def _enrich_assets(raw_assets: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
                 "dividendYield": dividend_yield,
                 "annualIncome": annual_income,
                 "dataStale": quote is None,  # 行情拉取失败时用成本价兜底，标记给前端提示
+                "priceAsOf": "REALTIME",
+            })
+
+        elif is_otc_fund(a):
+            shares = a.get("shares") or 0.0
+            cost_price = a.get("cost_price") or 0.0
+            nav = get_otc_fund_nav(a["code"]) if a.get("code") else None
+
+            current_price = nav["navPrice"] if nav else cost_price
+            current_value = round(shares * current_price, 2)
+            cost_value = shares * cost_price
+            profit = round(current_value - cost_value, 2)
+            profit_pct = round((profit / cost_value * 100), 2) if cost_value > 0 else 0.0
+
+            item.update({
+                "fundType": "OTC",
+                "shares": shares,
+                "costPrice": cost_price,
+                "currentPrice": current_price,
+                "currentValue": current_value,
+                "profit": profit,
+                "profitPct": profit_pct,
+                "dividendYield": None,
+                "annualIncome": 0.0,
+                "dataStale": nav is None,
+                "priceAsOf": "PREV_CLOSE_NAV",  # 场外基金净值为 T-1/收盘披露，非盘中实时
+                "navDate": nav["navDate"] if nav else None,
             })
 
         elif category in ("DEPOSIT", "WEALTH"):
@@ -160,18 +196,23 @@ def get_assets_summary() -> Dict[str, Any]:
     }
 
 
-@router.post("", status_code=201)
-def add_asset(body: AssetPayload) -> Dict[str, Any]:
+def _validate_payload(body: AssetPayload) -> None:
     if body.category not in CATEGORY_LABELS:
         raise HTTPException(status_code=400, detail=f"未知资产类别: {body.category}")
+    if body.category == "FUND" and body.fundType not in ("EXCHANGE", "OTC"):
+        raise HTTPException(status_code=400, detail="基金需指定 fundType: EXCHANGE(场内ETF) 或 OTC(场外基金)")
+
+
+@router.post("", status_code=201)
+def add_asset(body: AssetPayload) -> Dict[str, Any]:
+    _validate_payload(body)
     asset_id = storage_db.add_asset(body.to_storage_dict())
     return {"status": "ok", "id": asset_id}
 
 
 @router.put("/{asset_id}")
 def update_asset(asset_id: int, body: AssetPayload) -> Dict[str, Any]:
-    if body.category not in CATEGORY_LABELS:
-        raise HTTPException(status_code=400, detail=f"未知资产类别: {body.category}")
+    _validate_payload(body)
     ok = storage_db.update_asset(asset_id, body.to_storage_dict())
     if not ok:
         raise HTTPException(status_code=404, detail="资产不存在")

@@ -3,7 +3,7 @@ import os
 import uuid
 from typing import List, Dict, Any, Optional
 
-DB_PATH = os.path.join(os.path.dirname(__file__), "investscope.db")
+DB_PATH = os.environ.get("DB_PATH") or os.path.join(os.path.dirname(__file__), "investscope.db")
 
 class StorageDB:
     def __init__(self, db_path: str = DB_PATH):
@@ -80,27 +80,37 @@ class StorageDB:
                 annual_rate REAL,
                 deposit_type TEXT,
                 maturity_date TEXT,
+                fund_type TEXT,
                 notes TEXT,
                 created_at TEXT NOT NULL DEFAULT (datetime('now')),
                 updated_at TEXT NOT NULL DEFAULT (datetime('now'))
             )
             """)
-            
+
+            # 兼容旧数据库文件：如果表已存在但缺少 fund_type 列，补一列
+            cursor.execute("PRAGMA table_info(assets)")
+            existing_cols = {row[1] for row in cursor.fetchall()}
+            if "fund_type" not in existing_cols:
+                cursor.execute("ALTER TABLE assets ADD COLUMN fund_type TEXT")
+                # 已有的 FUND 记录默认视为场内 ETF（此前唯一支持的行情来源）
+                cursor.execute("UPDATE assets SET fund_type = 'EXCHANGE' WHERE category = 'FUND' AND fund_type IS NULL")
+
             cursor.execute("SELECT COUNT(*) FROM assets")
             asset_count = cursor.fetchone()[0]
             if asset_count == 0:
                 default_assets = [
-                    ("DEPOSIT", "招商银行活期存款", None, 200000.0, None, None, 0.2, "DEMAND", None, "日常应急流动资金"),
-                    ("DEPOSIT", "工商银行3年定期", None, 300000.0, None, None, 2.3, "FIXED", "2027-06-15", "稳健定期利息收息"),
-                    ("STOCK", "招商银行", "600036", None, 10000.0, 32.5, None, None, None, "核心收息底仓"),
-                    ("STOCK", "贵州茅台", "600519", None, 200.0, 1450.0, None, None, None, "高端白酒龙头"),
-                    ("FUND", "易方达沪深300ETF", "510300", None, 50000.0, 3.85, None, None, None, "宽基指数配置"),
-                    ("WEALTH", "建行日日鑫理财", None, 150000.0, None, None, 2.85, None, "2026-12-31", "短债稳健理财"),
-                    ("OTHER", "黄金积存", None, 35000.0, None, None, None, None, None, "避险资产配置"),
+                    ("DEPOSIT", "招商银行活期存款", None, 200000.0, None, None, 0.2, "DEMAND", None, None, "日常应急流动资金"),
+                    ("DEPOSIT", "工商银行3年定期", None, 300000.0, None, None, 2.3, "FIXED", "2027-06-15", None, "稳健定期利息收息"),
+                    ("STOCK", "招商银行", "600036", None, 10000.0, 32.5, None, None, None, None, "核心收息底仓"),
+                    ("STOCK", "贵州茅台", "600519", None, 200.0, 1450.0, None, None, None, None, "高端白酒龙头"),
+                    ("FUND", "易方达沪深300ETF", "510300", None, 50000.0, 3.85, None, None, None, "EXCHANGE", "宽基指数配置 (场内ETF)"),
+                    ("FUND", "易方达中小盘混合", "110011", None, 8000.0, 3.20, None, None, None, "OTC", "场外主动权益基金"),
+                    ("WEALTH", "建行日日鑫理财", None, 150000.0, None, None, 2.85, None, "2026-12-31", None, "短债稳健理财"),
+                    ("OTHER", "黄金积存", None, 35000.0, None, None, None, None, None, None, "避险资产配置"),
                 ]
                 cursor.executemany("""
-                INSERT INTO assets (category, name, code, amount, shares, cost_price, annual_rate, deposit_type, maturity_date, notes)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                INSERT INTO assets (category, name, code, amount, shares, cost_price, annual_rate, deposit_type, maturity_date, fund_type, notes)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """, default_assets)
 
             conn.commit()
@@ -119,8 +129,8 @@ class StorageDB:
         with self._get_conn() as conn:
             cursor = conn.cursor()
             cursor.execute("""
-            INSERT INTO assets (category, name, code, amount, shares, cost_price, annual_rate, deposit_type, maturity_date, notes)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            INSERT INTO assets (category, name, code, amount, shares, cost_price, annual_rate, deposit_type, maturity_date, fund_type, notes)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """, (
                 data.get("category"),
                 data.get("name"),
@@ -131,6 +141,7 @@ class StorageDB:
                 float(data["annual_rate"]) if data.get("annual_rate") is not None else None,
                 data.get("deposit_type"),
                 data.get("maturity_date"),
+                data.get("fund_type"),
                 data.get("notes"),
             ))
             conn.commit()
@@ -150,6 +161,7 @@ class StorageDB:
                 annual_rate = ?,
                 deposit_type = ?,
                 maturity_date = ?,
+                fund_type = ?,
                 notes = ?,
                 updated_at = datetime('now')
             WHERE id = ?
@@ -163,6 +175,7 @@ class StorageDB:
                 float(data["annual_rate"]) if data.get("annual_rate") is not None else None,
                 data.get("deposit_type"),
                 data.get("maturity_date"),
+                data.get("fund_type"),
                 data.get("notes"),
                 asset_id
             ))

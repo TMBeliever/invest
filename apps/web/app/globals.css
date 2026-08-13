@@ -2,6 +2,39 @@
 @source "../../packages";
 @import "@heroui/styles";
 
+/*
+ * 把 HeroUI 主题变量桥接到 Tailwind 的颜色 token 上。
+ * 没有这一步，`bg-primary` / `text-primary` / `text-primary-foreground` /
+ * `bg-default-*` / `text-default-*` 等类不会生成任何 CSS 规则——
+ * Tailwind v4 只有在 @theme 里声明了对应的 --color-* 变量才会生成工具类。
+ * 缺失时这些类名在 JSX 里"看起来"有效，实际不生效，颜色会向上继承父级，
+ * 深色模式下凑巧接近正确颜色，浅色模式下就会露出白字看不清的问题。
+ */
+@theme inline {
+  --color-primary: var(--accent);
+  --color-primary-foreground: var(--accent-foreground);
+
+  --color-default: var(--default);
+  --color-default-foreground: var(--default-foreground);
+  --color-default-50: var(--surface-secondary);
+  --color-default-100: var(--default);
+  --color-default-200: var(--surface-tertiary);
+  --color-default-300: var(--muted);
+  --color-default-400: var(--muted);
+  --color-default-500: var(--muted);
+
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-divider: var(--border);
+
+  --color-success: var(--success);
+  --color-success-foreground: var(--success-foreground);
+  --color-warning: var(--warning);
+  --color-warning-foreground: var(--warning-foreground);
+  --color-danger: var(--danger);
+  --color-danger-foreground: var(--danger-foreground);
+}
+
 :root {
   --sidebar-width: 260px;
   --header-height: 56px;
