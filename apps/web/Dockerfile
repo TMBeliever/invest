@@ -22,6 +22,7 @@ COPY --from=deps /app/node_modules ./node_modules
 COPY . .
 
 ENV NEXT_TELEMETRY_DISABLED 1
+ENV INTERNAL_API_URL http://server:8000
 
 # 执行前端构建
 RUN pnpm --filter @investscope/web build
