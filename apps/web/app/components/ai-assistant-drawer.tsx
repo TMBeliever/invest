@@ -135,29 +135,23 @@ function FormattedMarkdown({ content }: { content: string }) {
       continue;
     }
 
-    if (trimmed.startsWith("### ")) {
-      elements.push(
-        <h4 key={`h3-${index}`} className="font-bold text-xs text-primary mt-2 mb-1 flex items-center gap-1">
-          {parseInline(trimmed.slice(4))}
-        </h4>
-      );
-      continue;
-    }
+    const headingMatch = trimmed.match(/^(#{1,6})\s+(.*)$/);
+    if (headingMatch) {
+      const level = headingMatch[1].length;
+      const text = headingMatch[2];
+      const textSizeClass =
+        level === 1
+          ? "text-base font-extrabold text-primary mt-3 mb-1"
+          : level === 2
+          ? "text-sm font-bold text-primary mt-2.5 mb-1"
+          : level === 3
+          ? "text-xs font-bold text-primary mt-2 mb-1 flex items-center gap-1"
+          : "text-xs font-semibold text-emerald-400 mt-2 mb-1 flex items-center gap-1";
 
-    if (trimmed.startsWith("## ")) {
       elements.push(
-        <h3 key={`h2-${index}`} className="font-bold text-sm text-primary mt-2.5 mb-1">
-          {parseInline(trimmed.slice(3))}
-        </h3>
-      );
-      continue;
-    }
-
-    if (trimmed.startsWith("# ")) {
-      elements.push(
-        <h2 key={`h1-${index}`} className="font-extrabold text-base text-primary mt-3 mb-1">
-          {parseInline(trimmed.slice(2))}
-        </h2>
+        <div key={`h-${index}`} className={textSizeClass}>
+          {parseInline(text)}
+        </div>
       );
       continue;
     }
