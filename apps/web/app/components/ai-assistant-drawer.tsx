@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import { useAuthStore } from "@investscope/core";
 import {
   Bot,
   X,
@@ -78,7 +79,7 @@ export function AIAssistantDrawer() {
     setLoading(true);
 
     try {
-      const token = typeof window !== "undefined" ? localStorage.getItem("token") : null;
+      const token = useAuthStore.getState().token;
       const apiPayload = {
         messages: newMessages.map((m) => ({ role: m.role, content: m.content })),
       };
