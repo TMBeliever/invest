@@ -929,15 +929,14 @@ class AKShareClient:
 
         return report
 
-    # ─── 实时行情（单只）───────────────────────────────────────────────
-
     @staticmethod
     def get_realtime_quote(code: str) -> Optional[Dict[str, Any]]:
         """
-        获取单只股票实时行情。
+        获取单只股票实时行情（全量支持代码与中文名）。
         失败时返回 None（不返回假数据），调用方应处理 None。
         """
-        symbol = _tencent_symbol(code.strip())
+        clean_code = AKShareClient.resolve_symbol(code.strip())
+        symbol = _tencent_symbol(clean_code)
         try:
             resp = requests.get(f"http://qt.gtimg.cn/q={symbol}", timeout=3)
             if resp.status_code == 200 and '="' in resp.text:

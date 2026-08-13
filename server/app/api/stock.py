@@ -37,7 +37,8 @@ def get_stock_intraday(code: str) -> Dict[str, Any]:
     返回：逐分钟 [time, price, changePct, volume, avgPrice] + 昨收价。
     """
     import json as _json
-    code_str = code.strip()
+    from app.data.akshare_client import AKShareClient
+    code_str = AKShareClient.resolve_symbol(str(code).strip())
     symbol = _tencent_symbol(code_str)
 
     # 昨收价（用于计算涨跌幅）
@@ -126,19 +127,8 @@ def get_stock_kline(
     adjust: qfq (前复权) | hfq (后复权) | none (不复权)
     失败时返回 klines: []，前端展示"暂无数据"，不返回假数据。
     """
-    code_str = str(code).strip()
-
-    # 中文名 → 代码
-    if not code_str.isdigit():
-        name_map = {
-            "招商银行": "600036", "招商": "600036",
-            "贵州茅台": "600519", "茅台": "600519",
-            "建设银行": "601939", "中国平安": "601318",
-            "长江电力": "600900", "中国神华": "601088",
-            "新奥股份": "600803", "格力电器": "000651",
-        }
-        code_str = name_map.get(code_str, code_str)
-
+    from app.data.akshare_client import AKShareClient
+    code_str = AKShareClient.resolve_symbol(str(code).strip())
     symbol = _tencent_symbol(code_str)
 
     label_map  = {"daily": "日K", "weekly": "周K", "monthly": "月K", "quarterly": "季K", "yearly": "年K"}
