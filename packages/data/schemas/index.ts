@@ -434,6 +434,9 @@ export type AssetCategory = z.infer<typeof AssetCategorySchema>;
 export const FundTypeSchema = z.enum(["EXCHANGE", "OTC"]);
 export type FundType = z.infer<typeof FundTypeSchema>;
 
+export const PayoutMethodSchema = z.enum(["MATURITY", "MONTHLY", "QUARTERLY", "ANNUAL"]);
+export type PayoutMethod = z.infer<typeof PayoutMethodSchema>;
+
 export const AssetItemSchema = z.object({
   id: z.number(),
   category: AssetCategorySchema,
@@ -449,7 +452,11 @@ export const AssetItemSchema = z.object({
   amount: z.number().nullable().optional(),
   annualRate: z.number().nullable().optional(),
   depositType: z.enum(["DEMAND", "FIXED"]).nullable().optional(),
+  startDate: z.string().nullable().optional(),
   maturityDate: z.string().nullable().optional(),
+  payoutMethod: PayoutMethodSchema.nullable().optional(),
+  accruedInterest: z.number().nullable().optional(),
+  daysHeld: z.number().nullable().optional(),
 
   // 股票/基金
   fundType: FundTypeSchema.nullable().optional(), // 仅 category=FUND 时有值：EXCHANGE 场内ETF / OTC 场外基金
@@ -496,7 +503,9 @@ export type AssetPayload = {
   costPrice?: number | null;
   annualRate?: number | null;
   depositType?: "DEMAND" | "FIXED" | null;
+  startDate?: string | null;
   maturityDate?: string | null;
+  payoutMethod?: PayoutMethod | null;
   fundType?: FundType | null;
   notes?: string | null;
 };

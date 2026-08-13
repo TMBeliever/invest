@@ -31,6 +31,13 @@ const CATEGORY_TABS: { key: AssetCategory | "ALL"; label: string }[] = [
   { key: "OTHER", label: "📦 其他" },
 ];
 
+const PAYOUT_LABELS: Record<string, string> = {
+  MATURITY: "到期付息",
+  MONTHLY: "按月派息",
+  QUARTERLY: "按季结息",
+  ANNUAL: "按年派息",
+};
+
 const EMPTY_FORM: AssetPayload = {
   category: "DEPOSIT",
   name: "",
@@ -40,7 +47,9 @@ const EMPTY_FORM: AssetPayload = {
   costPrice: undefined,
   annualRate: undefined,
   depositType: "DEMAND",
+  startDate: "",
   maturityDate: "",
+  payoutMethod: "MATURITY",
   fundType: "EXCHANGE",
   notes: "",
 };
@@ -136,6 +145,20 @@ export default function AssetsPage() {
     setModalOpen(true);
   };
 
+  const applyQuickTerm = (years: number) => {
+    const startStr = form.startDate || new Date().toISOString().split("T")[0];
+    const dt = new Date(startStr);
+    if (!isNaN(dt.getTime())) {
+      dt.setFullYear(dt.getFullYear() + years);
+      const maturityStr = dt.toISOString().split("T")[0];
+      setForm((f) => ({
+        ...f,
+        startDate: startStr,
+        maturityDate: maturityStr,
+      }));
+    }
+  };
+
   const openEditModal = (asset: AssetItem) => {
     setEditingId(asset.id);
     setLookupInfo(null);
@@ -148,7 +171,9 @@ export default function AssetsPage() {
       costPrice: asset.costPrice ?? undefined,
       annualRate: asset.annualRate ?? undefined,
       depositType: asset.depositType ?? "DEMAND",
+      startDate: asset.startDate || "",
       maturityDate: asset.maturityDate || "",
+      payoutMethod: asset.payoutMethod ?? "MATURITY",
       fundType: asset.fundType ?? "EXCHANGE",
       notes: asset.notes || "",
     });
@@ -332,10 +357,29 @@ export default function AssetsPage() {
                       {isPosition ? (a.shares ?? 0).toLocaleString() : formatMoney(a.amount)}
                     </td>
                     <td className="py-3.5 px-4 text-right font-mono text-default-400">
-                      {isPosition ? `¥${formatPrice(a.costPrice, a.category === "FUND")}` : a.annualRate != null ? `${a.annualRate}%` : "--"}
+                      {isPosition ? (
+                        `¥${formatPrice(a.costPrice, a.category === "FUND")}`
+                      ) : a.annualRate != null ? (
+                        <div>
+                          <span>{a.annualRate}%</span>
+                          <div className="text-[10px] text-default-400 font-normal">
+                            {PAYOUT_LABELS[a.payoutMethod || "MATURITY"] || "到期付息"}
+                          </div>
+                        </div>
+                      ) : (
+                        "--"
+                      )}
                     </td>
                     <td className="py-3.5 px-4 text-right font-mono font-medium">
-                      {isPosition ? `¥${formatPrice(a.currentPrice, a.category === "FUND")}` : "--"}
+                      {isPosition ? (
+                        `¥${formatPrice(a.currentPrice, a.category === "FUND")}`
+                      ) : (
+                        <div className="flex flex-col items-end text-[10px] leading-tight">
+                          {a.startDate && <span className="text-blue-400 font-medium">起息 {a.startDate}</span>}
+                          {a.maturityDate && <span className="text-amber-400 font-medium">到期 {a.maturityDate}</span>}
+                          {!a.startDate && !a.maturityDate && <span className="text-default-400">--</span>}
+                        </div>
+                      )}
                       {a.category === "STOCK" && a.dividendYield != null && (
                         <div className="flex flex-col items-end text-[10px] leading-tight mt-0.5">
                           <span className="text-emerald-400 font-medium" title="最新盘中市场股息率">最新 {a.dividendYield}%</span>
@@ -365,7 +409,12 @@ export default function AssetsPage() {
                       {a.category === "STOCK" && (
                         <div className="text-[10px] text-default-400 font-normal" title="现金股息基于持股数与派息锁定，不受盘中股价波动影响">派息现金流</div>
                       )}
-                      {a.annualRate != null && (
+                      {a.accruedInterest != null && (
+                        <div className="text-[10px] text-blue-400 font-medium" title={`起息日 ${a.startDate}，现已存入 ${a.daysHeld} 天`}>
+                          已存 {a.daysHeld}天 | 累计利息 +{formatMoney(a.accruedInterest)}
+                        </div>
+                      )}
+                      {a.annualRate != null && a.accruedInterest == null && (
                         <div className="text-[10px] text-default-400 font-normal">年化 {a.annualRate}%</div>
                       )}
                     </td>
@@ -557,25 +606,77 @@ export default function AssetsPage() {
               )}
 
               {isRateCategory && (
-                <div className="grid grid-cols-2 gap-3">
-                  <div>
-                    <label className="block text-xs font-medium text-default-400 mb-1.5">年化利率 (%)</label>
-                    <input
-                      type="number"
-                      step="any"
-                      value={form.annualRate ?? ""}
-                      onChange={(e) => setForm((f) => ({ ...f, annualRate: e.target.value ? Number(e.target.value) : undefined }))}
-                      className="w-full px-3.5 py-2.5 rounded-xl bg-default-100 text-sm text-foreground placeholder:text-default-400 border border-transparent focus:border-primary focus:outline-none"
-                    />
+                <div className="space-y-4">
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <label className="block text-xs font-medium text-default-400 mb-1.5">年化利率 (%)</label>
+                      <input
+                        type="number"
+                        step="any"
+                        value={form.annualRate ?? ""}
+                        onChange={(e) => setForm((f) => ({ ...f, annualRate: e.target.value ? Number(e.target.value) : undefined }))}
+                        className="w-full px-3.5 py-2.5 rounded-xl bg-default-100 text-sm text-foreground placeholder:text-default-400 border border-transparent focus:border-primary focus:outline-none"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-xs font-medium text-default-400 mb-1.5">存入/起息日 (可选)</label>
+                      <input
+                        type="date"
+                        value={form.startDate || ""}
+                        onChange={(e) => setForm((f) => ({ ...f, startDate: e.target.value }))}
+                        className="w-full px-3.5 py-2.5 rounded-xl bg-default-100 text-sm text-foreground placeholder:text-default-400 border border-transparent focus:border-primary focus:outline-none"
+                      />
+                    </div>
                   </div>
+
                   <div>
-                    <label className="block text-xs font-medium text-default-400 mb-1.5">到期日 (可选)</label>
+                    <div className="flex items-center justify-between mb-1.5">
+                      <label className="block text-xs font-medium text-default-400">到期日 (可选)</label>
+                      <div className="flex gap-1.5">
+                        {[1, 2, 3, 5].map((y) => (
+                          <button
+                            key={y}
+                            type="button"
+                            onClick={() => applyQuickTerm(y)}
+                            className="px-2 py-0.5 rounded-md text-[10px] bg-primary/10 text-primary font-medium hover:bg-primary/20 transition-all border border-primary/20"
+                            title={`自动从起息日推算 ${y} 年后到期`}
+                          >
+                            +{y}年
+                          </button>
+                        ))}
+                      </div>
+                    </div>
                     <input
                       type="date"
                       value={form.maturityDate || ""}
                       onChange={(e) => setForm((f) => ({ ...f, maturityDate: e.target.value }))}
                       className="w-full px-3.5 py-2.5 rounded-xl bg-default-100 text-sm text-foreground placeholder:text-default-400 border border-transparent focus:border-primary focus:outline-none"
                     />
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-medium text-default-400 mb-1.5">派息/结息方式</label>
+                    <div className="grid grid-cols-4 gap-1.5">
+                      {[
+                        { key: "MATURITY", label: "到期付息" },
+                        { key: "MONTHLY", label: "按月派息" },
+                        { key: "QUARTERLY", label: "按季结息" },
+                        { key: "ANNUAL", label: "按年派息" },
+                      ].map((p) => (
+                        <button
+                          key={p.key}
+                          type="button"
+                          onClick={() => setForm((f) => ({ ...f, payoutMethod: p.key as any }))}
+                          className={`py-2 rounded-lg text-xs font-medium transition-all ${
+                            (form.payoutMethod ?? "MATURITY") === p.key
+                              ? "bg-primary/15 text-primary border border-primary/30 font-semibold"
+                              : "bg-default-100 text-default-500 border border-transparent hover:text-foreground"
+                          }`}
+                        >
+                          {p.label}
+                        </button>
+                      ))}
+                    </div>
                   </div>
                 </div>
               )}

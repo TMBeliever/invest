@@ -1,4 +1,5 @@
 import logging
+import datetime
 from typing import Any, Dict, List, Optional
 
 from fastapi import APIRouter, HTTPException, Depends
@@ -29,7 +30,9 @@ class AssetPayload(BaseModel):
     costPrice: Optional[float] = None
     annualRate: Optional[float] = None
     depositType: Optional[str] = None
+    startDate: Optional[str] = None
     maturityDate: Optional[str] = None
+    payoutMethod: Optional[str] = None
     fundType: Optional[str] = None
     notes: Optional[str] = None
 
@@ -43,7 +46,9 @@ class AssetPayload(BaseModel):
             "cost_price": self.costPrice,
             "annual_rate": self.annualRate,
             "deposit_type": self.depositType,
+            "start_date": self.startDate,
             "maturity_date": self.maturityDate,
+            "payout_method": self.payoutMethod,
             "fund_type": self.fundType,
             "notes": self.notes,
         }
@@ -138,11 +143,31 @@ def _enrich_assets(raw_assets: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
         elif category in ("DEPOSIT", "WEALTH"):
             amount = a.get("amount") or 0.0
             annual_rate = a.get("annual_rate") or 0.0
+            start_date_str = a.get("start_date")
+            days_held = None
+            accrued_interest = None
+
+            if start_date_str:
+                try:
+                    start_dt = datetime.datetime.strptime(start_date_str, "%Y-%m-%d").date()
+                    today = datetime.date.today()
+                    if today >= start_dt:
+                        days_held = (today - start_dt).days
+                        accrued_interest = round(amount * (annual_rate / 100.0) * (days_held / 365.0), 2)
+                except Exception:
+                    pass
+
+            payout_method = a.get("payout_method") or "MATURITY"
+
             item.update({
                 "amount": amount,
                 "annualRate": annual_rate,
                 "depositType": a.get("deposit_type"),
+                "startDate": start_date_str,
                 "maturityDate": a.get("maturity_date"),
+                "payoutMethod": payout_method,
+                "daysHeld": days_held,
+                "accruedInterest": accrued_interest,
                 "currentValue": round(amount, 2),
                 "annualIncome": round(amount * annual_rate / 100, 2),
             })

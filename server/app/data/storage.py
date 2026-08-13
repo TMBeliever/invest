@@ -86,6 +86,10 @@ class StorageDB:
                 cursor.execute("ALTER TABLE assets ADD COLUMN fund_type TEXT")
             if "user_id" not in asset_cols:
                 cursor.execute("ALTER TABLE assets ADD COLUMN user_id TEXT")
+            if "start_date" not in asset_cols:
+                cursor.execute("ALTER TABLE assets ADD COLUMN start_date TEXT")
+            if "payout_method" not in asset_cols:
+                cursor.execute("ALTER TABLE assets ADD COLUMN payout_method TEXT")
 
             cursor.execute("CREATE INDEX IF NOT EXISTS idx_assets_user_id ON assets(user_id)")
 
@@ -107,8 +111,8 @@ class StorageDB:
         with self._get_conn() as conn:
             cursor = conn.cursor()
             cursor.execute("""
-            INSERT INTO assets (user_id, category, name, code, amount, shares, cost_price, annual_rate, deposit_type, maturity_date, fund_type, notes)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            INSERT INTO assets (user_id, category, name, code, amount, shares, cost_price, annual_rate, deposit_type, start_date, maturity_date, payout_method, fund_type, notes)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """, (
                 user_id,
                 data.get("category"),
@@ -119,7 +123,9 @@ class StorageDB:
                 float(data["cost_price"]) if data.get("cost_price") is not None else None,
                 float(data["annual_rate"]) if data.get("annual_rate") is not None else None,
                 data.get("deposit_type"),
+                data.get("start_date"),
                 data.get("maturity_date"),
+                data.get("payout_method"),
                 data.get("fund_type"),
                 data.get("notes"),
             ))
@@ -139,7 +145,9 @@ class StorageDB:
                 cost_price = ?,
                 annual_rate = ?,
                 deposit_type = ?,
+                start_date = ?,
                 maturity_date = ?,
+                payout_method = ?,
                 fund_type = ?,
                 notes = ?,
                 updated_at = datetime('now')
@@ -153,7 +161,9 @@ class StorageDB:
                 float(data["cost_price"]) if data.get("cost_price") is not None else None,
                 float(data["annual_rate"]) if data.get("annual_rate") is not None else None,
                 data.get("deposit_type"),
+                data.get("start_date"),
                 data.get("maturity_date"),
+                data.get("payout_method"),
                 data.get("fund_type"),
                 data.get("notes"),
                 asset_id,
