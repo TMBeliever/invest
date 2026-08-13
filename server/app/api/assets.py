@@ -90,6 +90,9 @@ def _enrich_assets(raw_assets: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
             annual_income = round(current_value * dividend_yield / 100, 2) if (
                 category == "STOCK" and dividend_yield is not None
             ) else 0.0
+            cost_dividend_yield = round(annual_income / cost_value * 100, 2) if (
+                category == "STOCK" and cost_value > 0 and annual_income > 0
+            ) else dividend_yield
 
             item.update({
                 "fundType": "EXCHANGE" if category == "FUND" else None,
@@ -100,6 +103,7 @@ def _enrich_assets(raw_assets: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
                 "profit": profit,
                 "profitPct": profit_pct,
                 "dividendYield": dividend_yield,
+                "costDividendYield": cost_dividend_yield,
                 "annualIncome": annual_income,
                 "dataStale": quote is None,  # 行情拉取失败时用成本价兜底，标记给前端提示
                 "priceAsOf": "REALTIME",

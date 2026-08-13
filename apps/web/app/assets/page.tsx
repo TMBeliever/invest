@@ -280,7 +280,12 @@ export default function AssetsPage() {
                     <td className="py-3.5 px-4 text-right font-mono font-medium">
                       {isPosition ? `¥${a.currentPrice ?? "--"}` : "--"}
                       {a.category === "STOCK" && a.dividendYield != null && (
-                        <div className="text-[10px] text-emerald-400 font-medium">股息率 {a.dividendYield}%</div>
+                        <div className="flex flex-col items-end text-[10px] leading-tight mt-0.5">
+                          <span className="text-emerald-400 font-medium" title="最新盘中市场股息率">最新 {a.dividendYield}%</span>
+                          {a.costDividendYield != null && (
+                            <span className="text-blue-400 font-medium" title="你的实际买入成本股息率 (Yield on Cost)">成本 {a.costDividendYield}%</span>
+                          )}
+                        </div>
                       )}
                       {isOtcFund && a.navDate && (
                         <div className="text-[9px] text-default-400 font-normal">净值日 {a.navDate}</div>
@@ -300,8 +305,8 @@ export default function AssetsPage() {
                     </td>
                     <td className="py-3.5 px-4 text-right font-mono font-medium">
                       <span className="text-emerald-400 font-semibold">{formatMoney(a.annualIncome)}/年</span>
-                      {a.category === "STOCK" && a.dividendYield != null && (
-                        <div className="text-[10px] text-default-400 font-normal">股息 {a.dividendYield}%</div>
+                      {a.category === "STOCK" && (
+                        <div className="text-[10px] text-default-400 font-normal" title="现金股息基于持股数与派息锁定，不受盘中股价波动影响">派息现金流</div>
                       )}
                       {a.annualRate != null && (
                         <div className="text-[10px] text-default-400 font-normal">年化 {a.annualRate}%</div>

@@ -459,6 +459,7 @@ export const AssetItemSchema = z.object({
   profit: z.number().nullable().optional(),
   profitPct: z.number().nullable().optional(),
   dividendYield: z.number().nullable().optional(),
+  costDividendYield: z.number().nullable().optional(),
   dataStale: z.boolean().nullable().optional(),
   priceAsOf: z.enum(["REALTIME", "PREV_CLOSE_NAV"]).nullable().optional(), // 价格时效：秒级实时 / 场外基金T-1收盘净值
   navDate: z.string().nullable().optional(), // 场外基金净值披露日期
