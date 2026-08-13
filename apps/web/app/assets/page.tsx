@@ -170,7 +170,7 @@ export default function AssetsPage() {
           <div className="text-2xl font-bold mt-1">{formatMoney(s?.totalValue)}</div>
         </div>
         <div className="glass-panel p-5 animate-fade-in">
-          <span className="text-xs text-default-400">持仓总浮盈</span>
+          <span className="text-xs text-default-400">持仓总浮盈 (资本利得)</span>
           <div className={`text-2xl font-bold mt-1 ${(s?.totalProfit ?? 0) >= 0 ? "text-rise" : "text-fall"}`}>
             {(s?.totalProfit ?? 0) >= 0 ? "+" : ""}{formatMoney(s?.totalProfit)}
           </div>
@@ -178,9 +178,10 @@ export default function AssetsPage() {
             {(s?.totalProfitPct ?? 0) >= 0 ? "+" : ""}{s?.totalProfitPct ?? 0}%
           </span>
         </div>
-        <div className="glass-panel p-5 animate-fade-in">
-          <span className="text-xs text-default-400">预估年收益</span>
+        <div className="glass-panel p-5 animate-fade-in relative group cursor-help">
+          <span className="text-xs text-default-400 border-b border-dashed border-default-400/50">预估年收益 (现金流)</span>
           <div className="text-2xl font-bold text-emerald-400 mt-1">{formatMoney(s?.estimatedAnnualIncome)}/年</div>
+          <p className="text-[10px] text-default-400 mt-1">包含存款利息、理财收益与股票预估年分红</p>
         </div>
         <div className="glass-panel p-5 animate-fade-in">
           <span className="text-xs text-default-400">资产项数</span>
@@ -216,17 +217,18 @@ export default function AssetsPage() {
                 <th className="text-left py-3 px-4 font-medium">资产名称</th>
                 <th className="text-left py-3 px-4 font-medium">分类</th>
                 <th className="text-right py-3 px-4 font-medium">数量/本金</th>
-                <th className="text-right py-3 px-4 font-medium">成本/利率</th>
-                <th className="text-right py-3 px-4 font-medium">现价</th>
+                <th className="text-right py-3 px-4 font-medium">成本/约定利率</th>
+                <th className="text-right py-3 px-4 font-medium">现价/股息率</th>
                 <th className="text-right py-3 px-4 font-medium">市值</th>
-                <th className="text-right py-3 px-4 font-medium">浮盈/预估年收益</th>
+                <th className="text-right py-3 px-4 font-medium">持仓浮盈</th>
+                <th className="text-right py-3 px-4 font-medium">预估年收益</th>
                 <th className="text-right py-3 px-4 font-medium">操作</th>
               </tr>
             </thead>
             <tbody>
               {filteredAssets.length === 0 && (
                 <tr>
-                  <td colSpan={8} className="py-10 text-center text-xs text-default-400">
+                  <td colSpan={9} className="py-10 text-center text-xs text-default-400">
                     暂无该类别资产，点击右上角「添加资产」录入
                   </td>
                 </tr>
@@ -277,6 +279,9 @@ export default function AssetsPage() {
                     </td>
                     <td className="py-3.5 px-4 text-right font-mono font-medium">
                       {isPosition ? `¥${a.currentPrice ?? "--"}` : "--"}
+                      {a.category === "STOCK" && a.dividendYield != null && (
+                        <div className="text-[10px] text-emerald-400 font-medium">股息率 {a.dividendYield}%</div>
+                      )}
                       {isOtcFund && a.navDate && (
                         <div className="text-[9px] text-default-400 font-normal">净值日 {a.navDate}</div>
                       )}
@@ -290,7 +295,16 @@ export default function AssetsPage() {
                           {profitUp ? "+" : ""}{formatMoney(profit)} ({profitUp ? "+" : ""}{a.profitPct ?? 0}%)
                         </span>
                       ) : (
-                        <span className="text-emerald-400">{formatMoney(a.annualIncome)}/年</span>
+                        <span className="text-default-400">--</span>
+                      )}
+                    </td>
+                    <td className="py-3.5 px-4 text-right font-mono font-medium">
+                      <span className="text-emerald-400 font-semibold">{formatMoney(a.annualIncome)}/年</span>
+                      {a.category === "STOCK" && a.dividendYield != null && (
+                        <div className="text-[10px] text-default-400 font-normal">股息 {a.dividendYield}%</div>
+                      )}
+                      {a.annualRate != null && (
+                        <div className="text-[10px] text-default-400 font-normal">年化 {a.annualRate}%</div>
                       )}
                     </td>
                     <td className="py-3.5 px-4 text-right">
