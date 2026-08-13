@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { useAssetStore } from "@investscope/core";
+import { useAssetStore, apiClient } from "@investscope/core";
 import { AssetAllocationChart, SegmentedTabs } from "@investscope/ui";
 import type { AssetCategory, AssetItem, AssetPayload } from "@investscope/data/schemas";
 import {
@@ -73,15 +73,64 @@ export default function AssetsPage() {
     [assets, filterCategory]
   );
 
+  const [lookupLoading, setLookupLoading] = useState(false);
+  const [lookupInfo, setLookupInfo] = useState<{ name: string; currentPrice?: number; category?: string; found: boolean } | null>(null);
+
+  const handleCodeChange = async (val: string) => {
+    const code = val.trim().toUpperCase();
+    setForm((f) => ({ ...f, code }));
+    if (!code || code.length < 2) {
+      setLookupInfo(null);
+      return;
+    }
+
+    setLookupLoading(true);
+    try {
+      const res = await apiClient.get<{
+        code: string;
+        name: string;
+        category: AssetCategory;
+        fundType: "EXCHANGE" | "OTC" | null;
+        currentPrice: number | null;
+        dividendYield: number | null;
+        found: boolean;
+      }>(`/api/assets/lookup?code=${encodeURIComponent(code)}`);
+
+      if (res.found && res.name) {
+        setLookupInfo({
+          name: res.name,
+          currentPrice: res.currentPrice ?? undefined,
+          category: res.category,
+          found: true,
+        });
+        setForm((f) => ({
+          ...f,
+          name: res.name,
+          category: res.category,
+          fundType: res.fundType ?? f.fundType,
+          costPrice: f.costPrice ?? (res.currentPrice ? Number(res.currentPrice.toFixed(2)) : undefined),
+        }));
+      } else {
+        setLookupInfo(null);
+      }
+    } catch {
+      setLookupInfo(null);
+    } finally {
+      setLookupLoading(false);
+    }
+  };
+
   const openAddModal = () => {
     setEditingId(null);
     setForm(EMPTY_FORM);
+    setLookupInfo(null);
     setFormError(null);
     setModalOpen(true);
   };
 
   const openEditModal = (asset: AssetItem) => {
     setEditingId(asset.id);
+    setLookupInfo(null);
     setForm({
       category: asset.category,
       name: asset.name,
@@ -371,31 +420,46 @@ export default function AssetsPage() {
                 </div>
               </div>
 
+              {isPositionCategory && (
+                <div>
+                  <label className="block text-xs font-medium text-default-400 mb-1.5">
+                    股票/基金代码 <span className="text-emerald-400 text-[10px] font-normal">(输入代码自动识别名称/类别/盘中价)</span>
+                  </label>
+                  <input
+                    type="text"
+                    value={form.code || ""}
+                    onChange={(e) => handleCodeChange(e.target.value)}
+                    placeholder="输入代码 (如 600036, 510300, 110011, AAPL)"
+                    className="w-full px-3.5 py-2.5 rounded-xl bg-default-100 text-sm font-mono text-foreground placeholder:text-default-400 border border-transparent focus:border-primary focus:outline-none"
+                  />
+                  {lookupLoading && (
+                    <div className="text-xs text-blue-400 flex items-center gap-1.5 mt-1.5 animate-pulse">
+                      <RefreshCw className="w-3 h-3 animate-spin" />
+                      正在智能匹配代码行情...
+                    </div>
+                  )}
+                  {lookupInfo?.found && (
+                    <div className="text-xs text-emerald-400 bg-emerald-500/10 border border-emerald-500/20 rounded-xl px-3 py-2 mt-2 flex items-center justify-between animate-fade-in">
+                      <span>✨ 已匹配：<strong>{lookupInfo.name}</strong> ({lookupInfo.category === "STOCK" ? "股票" : "基金"})</span>
+                      {lookupInfo.currentPrice && <span>盘中价 <strong>¥{lookupInfo.currentPrice}</strong></span>}
+                    </div>
+                  )}
+                </div>
+              )}
+
               <div>
                 <label className="block text-xs font-medium text-default-400 mb-1.5">
-                  {isPositionCategory ? "股票/基金代码及名称" : "资产名称"}
+                  {isPositionCategory ? "资产名称" : "资产名称"}
                 </label>
                 <input
                   type="text"
                   value={form.name}
                   onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))}
                   required
+                  placeholder={isPositionCategory ? "输入代码后自动反填" : "如 招商银行活期存款"}
                   className="w-full px-3.5 py-2.5 rounded-xl bg-default-100 text-sm text-foreground placeholder:text-default-400 border border-transparent focus:border-primary focus:outline-none"
                 />
               </div>
-
-              {isPositionCategory && (
-                <div>
-                  <label className="block text-xs font-medium text-default-400 mb-1.5">代码</label>
-                  <input
-                    type="text"
-                    value={form.code || ""}
-                    onChange={(e) => setForm((f) => ({ ...f, code: e.target.value }))}
-                    placeholder="如 600036"
-                    className="w-full px-3.5 py-2.5 rounded-xl bg-default-100 text-sm text-foreground placeholder:text-default-400 border border-transparent focus:border-primary focus:outline-none"
-                  />
-                </div>
-              )}
 
               {isFundCategory && (
                 <div>

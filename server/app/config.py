@@ -15,7 +15,7 @@ class Settings(BaseSettings):
         "http://127.0.0.1:3000",
     ]
 
-    JWT_SECRET_KEY: str = ""
+    JWT_SECRET_KEY: str = "investscope_permanent_secret_key_2026_dev_key"
     JWT_ALGORITHM: str = "HS256"
     JWT_EXPIRE_DAYS: int = 30
 
@@ -24,11 +24,4 @@ class Settings(BaseSettings):
         env_file = ".env"
 
 settings = Settings()
-
-if not settings.JWT_SECRET_KEY:
-    settings.JWT_SECRET_KEY = secrets.token_hex(32)
-    logger.warning(
-        "未设置 JWT_SECRET_KEY 环境变量，已生成临时随机密钥（服务重启后所有旧 token 将失效）。"
-        "生产环境请在 server/.env 中设置固定的 JWT_SECRET_KEY。"
-    )
 

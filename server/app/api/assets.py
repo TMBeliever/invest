@@ -227,6 +227,66 @@ def update_asset(asset_id: int, body: AssetPayload, current_user: Dict[str, Any]
     return {"status": "ok"}
 
 
+@router.get("/lookup")
+def quick_lookup_asset(code: str) -> Dict[str, Any]:
+    """
+    根据股票/基金代码自动推导类别、智能拉取真实名称与盘中现价
+    """
+    c = code.strip().upper()
+    if not c:
+        raise HTTPException(status_code=400, detail="请输入代码")
+
+    category = "STOCK"
+    fund_type = None
+
+    if len(c) == 6 and c.isdigit():
+        prefix2 = c[:2]
+        if prefix2 in ("51", "52", "56", "58", "15", "16", "50"):
+            category = "FUND"
+            fund_type = "EXCHANGE"
+        elif prefix2 in ("60", "68", "00", "30", "43", "83", "87", "88", "92"):
+            category = "STOCK"
+            fund_type = None
+        else:
+            category = "FUND"
+            fund_type = "OTC"
+
+    name = None
+    current_price = None
+    dividend_yield = None
+
+    if category == "STOCK" or fund_type == "EXCHANGE":
+        quotes = _batch_tencent_quote([c])
+        quote = quotes.get(c)
+        if quote:
+            name = quote.get("name")
+            current_price = quote.get("price")
+            dividend_yield = quote.get("dividendYield")
+    elif fund_type == "OTC":
+        nav = get_otc_fund_nav(c)
+        if nav:
+            name = nav.get("fundName")
+            current_price = nav.get("navPrice")
+
+    if not name:
+        from app.data.akshare_client import search_stocks
+        search_res = search_stocks(c)
+        if search_res:
+            matched = search_res[0]
+            name = matched.get("name")
+            current_price = matched.get("price")
+
+    return {
+        "code": c,
+        "name": name or c,
+        "category": category,
+        "fundType": fund_type,
+        "currentPrice": current_price,
+        "dividendYield": dividend_yield,
+        "found": name is not None,
+    }
+
+
 @router.delete("/{asset_id}")
 def delete_asset(asset_id: int, current_user: Dict[str, Any] = Depends(get_current_user)) -> Dict[str, Any]:
     user_id = current_user["id"]

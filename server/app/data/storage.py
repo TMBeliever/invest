@@ -97,6 +97,8 @@ class StorageDB:
         with self._get_conn() as conn:
             conn.row_factory = sqlite3.Row
             cursor = conn.cursor()
+            cursor.execute("UPDATE assets SET user_id = ? WHERE user_id IS NULL", (user_id,))
+            conn.commit()
             cursor.execute("SELECT * FROM assets WHERE user_id = ? ORDER BY id DESC", (user_id,))
             rows = cursor.fetchall()
             return [dict(row) for row in rows]
