@@ -44,8 +44,8 @@ export default function MarketPage() {
   const filteredIndices = indices.filter((item: any) => {
     if (activeCategory === "A_SHARE") return ["000001", "399001", "399006", "000300", "000905", "588000"].includes(item.code);
     if (activeCategory === "DIVIDEND") return ["000922", "000300"].includes(item.code);
-    if (activeCategory === "HK") return ["HSI", "HSCEI", "r_HSI", "r_HSCEI"].includes(item.code) || item.name.includes("恒生");
-    if (activeCategory === "US") return [".DJI", ".INX", ".IXIC"].includes(item.code) || ["道琼斯", "标普500", "纳斯达克"].includes(item.name);
+    if (activeCategory === "HK") return ["HSI", "HSCEI", "HSTECH", "r_HSI", "hkHSCEI", "hkHSTECH"].includes(item.code) || item.name.includes("恒生") || item.name.includes("国企");
+    if (activeCategory === "US") return [".DJI", ".INX", ".IXIC", ".NDX"].includes(item.code) || ["道琼斯", "标普500", "纳斯达克", "纳指100"].includes(item.name);
     if (activeCategory === "KR_JP") return ["N225", "KOSPI"].includes(item.code) || ["日经225", "韩国KOSPI"].includes(item.name);
     return true;
   });
