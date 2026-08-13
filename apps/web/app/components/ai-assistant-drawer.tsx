@@ -1,7 +1,8 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { useAuthStore } from "@investscope/core";
+import { usePathname } from "next/navigation";
+import { useAuthStore, useStockDetailStore } from "@investscope/core";
 import {
   Bot,
   X,
@@ -32,13 +33,6 @@ interface ChatSession {
   created_at: string;
   updated_at: string;
 }
-
-const QUICK_PROMPTS = [
-  "💡 一键诊断我的持仓结构与风险",
-  "💰 我有 5 万元闲置资金结合持仓怎么配",
-  "📈 分析当前大盘股债风险溢价",
-  "🏦 到期定期存款收益如何最大化",
-];
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://127.0.0.1:8000";
 
@@ -213,6 +207,9 @@ function FormattedMarkdown({ content }: { content: string }) {
 }
 
 export function AIAssistantDrawer() {
+  const pathname = usePathname();
+  const { quote, financialAnalysis } = useStockDetailStore();
+
   const [isOpen, setIsOpen] = useState(false);
   const [isMinimized, setIsMinimized] = useState(false);
   const [showHistory, setShowHistory] = useState(false);
@@ -250,6 +247,61 @@ export function AIAssistantDrawer() {
   ]);
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
+
+  // 动态构建全页面上下文感知的 Smart Prompt Chips
+  const getContextSmartPrompts = () => {
+    if (pathname.startsWith("/dividend/") && pathname !== "/dividend") {
+      const urlCode = pathname.split("/")[2] || "";
+      const decodedName = decodeURIComponent(urlCode);
+      const stockName = quote?.name || financialAnalysis?.name || decodedName;
+
+      return {
+        contextTag: `📌 当前【${stockName}】专属分析:`,
+        prompts: [
+          `📊 帮我解读【${stockName}】的最新财报与排雷体检`,
+          `📈 分析【${stockName}】今日盘中表现与变动原因`,
+          `💰 计算买入【${stockName}】的建仓股息率与现金流`,
+          `🔮 查看【${stockName}】的卖方分析师一致预期`,
+        ],
+      };
+    }
+
+    if (pathname === "/dividend") {
+      return {
+        contextTag: "📌 红利选股大厅专属分析:",
+        prompts: [
+          "🔥 分析当前红利板块的估值温度与水温",
+          "🏆 帮我推荐 3 只稳定分红 10 年的高股息龙头",
+          "⚖️ 破净高股息 vs 高 ROE 策略怎么选",
+          "🛡️ 防守型高股息组合如何配置",
+        ],
+      };
+    }
+
+    if (pathname === "/market") {
+      return {
+        contextTag: "📌 宏观大盘专属分析:",
+        prompts: [
+          "📈 评估当前股债风险溢价比 (ERP) 胜率",
+          "🌐 中证红利 (000922) 当前适合按月定投吗",
+          "💵 10 年期国债收益率 1.7% 下怎么做资产配置",
+          "🏦 利率下行周期高股息资产怎么配",
+        ],
+      };
+    }
+
+    return {
+      contextTag: "📌 资产配置与账户诊断提示词:",
+      prompts: [
+        "💡 一键诊断我的持仓结构与收益风险",
+        "🛡️ 检查我的现金避险仓与防守比例",
+        "💰 我有 5 万元闲置资金结合持仓怎么配",
+        "🏦 到期定期存款收益如何最大化",
+      ],
+    };
+  };
+
+  const currentContextPrompts = getContextSmartPrompts();
 
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -749,12 +801,14 @@ export function AIAssistantDrawer() {
                     <div ref={messagesEndRef} />
                   </div>
 
-                  {/* 推荐快捷提问 */}
+                  {/* 上下文感知的 Smart Prompt Chips 推荐提问 */}
                   {messages.length <= 2 && (
                     <div className="px-3 py-2 border-t border-white/10 bg-[#16181e]">
-                      <div className="text-[10px] text-default-400 mb-1.5 font-medium">推荐快捷提问:</div>
+                      <div className="text-[10px] text-primary mb-1.5 font-medium flex items-center gap-1">
+                        <span>{currentContextPrompts.contextTag}</span>
+                      </div>
                       <div className="flex flex-wrap gap-1">
-                        {QUICK_PROMPTS.map((qp, i) => (
+                        {currentContextPrompts.prompts.map((qp, i) => (
                           <button
                             key={i}
                             onClick={() => handleSend(qp)}
@@ -781,7 +835,7 @@ export function AIAssistantDrawer() {
                         type="text"
                         value={input}
                         onChange={(e) => setInput(e.target.value)}
-                        placeholder="问问 AI：诊断我的持仓 / 资金调仓建议..."
+                        placeholder="问问 AI：诊断持仓 / 股票排雷 / 资金建议..."
                         disabled={loading}
                         className="flex-1 px-3 py-2 rounded-xl bg-[#202229] text-xs text-white placeholder:text-gray-400 border border-white/10 focus:border-primary focus:outline-none"
                       />
