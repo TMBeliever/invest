@@ -57,7 +57,7 @@ def get_portfolio_summary(current_user: Dict[str, Any] = Depends(get_current_use
         "totalAssets": round(total_assets, 2),
         "totalProfitLoss": round(total_profit_loss, 2),
         "totalProfitLossPct": total_profit_loss_pct,
-        "annualizedReturn": 0.0 if total_assets == 0 else 10.2,
+        "annualizedReturn": total_profit_loss_pct,
         "allocation": {
             "core": core_pct,
             "satellite": satellite_pct,

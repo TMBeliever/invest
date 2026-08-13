@@ -82,7 +82,7 @@ def _enrich_assets(raw_assets: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
 
             current_price = quote["price"] if quote else cost_price
             current_value = round(shares * current_price, 2)
-            cost_value = shares * cost_price
+            cost_value = round(shares * cost_price, 4)
             profit = round(current_value - cost_value, 2)
             profit_pct = round((profit / cost_value * 100), 2) if cost_value > 0 else 0.0
 
@@ -116,7 +116,7 @@ def _enrich_assets(raw_assets: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
 
             current_price = nav["navPrice"] if nav else cost_price
             current_value = round(shares * current_price, 2)
-            cost_value = shares * cost_price
+            cost_value = round(shares * cost_price, 4)
             profit = round(current_value - cost_value, 2)
             profit_pct = round((profit / cost_value * 100), 2) if cost_value > 0 else 0.0
 
