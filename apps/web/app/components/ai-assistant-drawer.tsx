@@ -30,6 +30,184 @@ const QUICK_PROMPTS = [
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://127.0.0.1:8000";
 
+function FormattedMarkdown({ content }: { content: string }) {
+  if (!content) return null;
+
+  const lines = content.split("\n");
+  const elements: React.ReactNode[] = [];
+
+  let inTable = false;
+  let tableHeader: string[] = [];
+  let tableRows: string[][] = [];
+
+  const parseInline = (text: string): React.ReactNode => {
+    if (!text) return "";
+    const parts = text.split(/(\*\*.*?\*\*|`.*?`)/g);
+    return parts.map((part, idx) => {
+      if (part.startsWith("**") && part.endsWith("**") && part.length >= 4) {
+        return (
+          <strong key={idx} className="font-semibold text-primary">
+            {part.slice(2, -2)}
+          </strong>
+        );
+      }
+      if (part.startsWith("`") && part.endsWith("`") && part.length >= 2) {
+        return (
+          <code key={idx} className="px-1 py-0.5 rounded bg-primary/20 text-primary font-mono text-[10px]">
+            {part.slice(1, -1)}
+          </code>
+        );
+      }
+      return part;
+    });
+  };
+
+  const flushTable = (keyPrefix: string) => {
+    if (tableRows.length > 0 || tableHeader.length > 0) {
+      elements.push(
+        <div key={`${keyPrefix}-table`} className="my-2 overflow-x-auto rounded-lg border border-white/15 bg-[#16171d]">
+          <table className="w-full text-left text-[11px] border-collapse">
+            {tableHeader.length > 0 && (
+              <thead>
+                <tr className="bg-primary/15 border-b border-white/10 text-primary font-bold">
+                  {tableHeader.map((th, i) => (
+                    <th key={i} className="px-2.5 py-1.5 whitespace-nowrap">
+                      {parseInline(th)}
+                    </th>
+                  ))}
+                </tr>
+              </thead>
+            )}
+            <tbody>
+              {tableRows.map((row, ri) => (
+                <tr key={ri} className="border-b border-white/5 hover:bg-white/5">
+                  {row.map((cell, ci) => (
+                    <td key={ci} className="px-2.5 py-1.5 text-gray-200">
+                      {parseInline(cell)}
+                    </td>
+                  ))}
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      );
+    }
+    inTable = false;
+    tableHeader = [];
+    tableRows = [];
+  };
+
+  for (let index = 0; index < lines.length; index++) {
+    const line = lines[index];
+    const trimmed = line.trim();
+
+    // Markdown 表格
+    if (trimmed.startsWith("|") && trimmed.endsWith("|")) {
+      const cells = trimmed
+        .split("|")
+        .slice(1, -1)
+        .map((c) => c.trim());
+
+      // 滤除列分隔符如 | :--- | :--- |
+      if (cells.every((c) => /^:?-+:?$/.test(c))) {
+        continue;
+      }
+
+      if (!inTable) {
+        inTable = true;
+        tableHeader = cells;
+      } else {
+        tableRows.push(cells);
+      }
+      continue;
+    } else if (inTable) {
+      flushTable(`tb-${index}`);
+    }
+
+    if (!trimmed) {
+      elements.push(<div key={`sp-${index}`} className="h-1" />);
+      continue;
+    }
+
+    if (trimmed === "---" || trimmed === "***") {
+      elements.push(<hr key={`hr-${index}`} className="my-2 border-white/15" />);
+      continue;
+    }
+
+    if (trimmed.startsWith("### ")) {
+      elements.push(
+        <h4 key={`h3-${index}`} className="font-bold text-xs text-primary mt-2 mb-1 flex items-center gap-1">
+          {parseInline(trimmed.slice(4))}
+        </h4>
+      );
+      continue;
+    }
+
+    if (trimmed.startsWith("## ")) {
+      elements.push(
+        <h3 key={`h2-${index}`} className="font-bold text-sm text-primary mt-2.5 mb-1">
+          {parseInline(trimmed.slice(3))}
+        </h3>
+      );
+      continue;
+    }
+
+    if (trimmed.startsWith("# ")) {
+      elements.push(
+        <h2 key={`h1-${index}`} className="font-extrabold text-base text-primary mt-3 mb-1">
+          {parseInline(trimmed.slice(2))}
+        </h2>
+      );
+      continue;
+    }
+
+    if (trimmed.startsWith("> ")) {
+      elements.push(
+        <div key={`bq-${index}`} className="pl-2.5 py-1 border-l-2 border-primary/70 bg-primary/10 text-gray-200 rounded-r my-1 text-[11px] leading-relaxed">
+          {parseInline(trimmed.slice(2))}
+        </div>
+      );
+      continue;
+    }
+
+    if (/^[-*]\s/.test(trimmed)) {
+      elements.push(
+        <div key={`li-${index}`} className="flex items-start gap-1.5 ml-1 my-0.5 text-xs text-gray-200">
+          <span className="text-primary font-bold">•</span>
+          <span className="flex-1 leading-relaxed">{parseInline(trimmed.slice(2))}</span>
+        </div>
+      );
+      continue;
+    }
+
+    if (/^\d+\.\s/.test(trimmed)) {
+      const match = trimmed.match(/^(\d+)\.\s(.*)$/);
+      if (match) {
+        elements.push(
+          <div key={`nli-${index}`} className="flex items-start gap-1.5 ml-1 my-0.5 text-xs text-gray-200">
+            <span className="text-primary font-semibold text-[11px]">{match[1]}.</span>
+            <span className="flex-1 leading-relaxed">{parseInline(match[2])}</span>
+          </div>
+        );
+        continue;
+      }
+    }
+
+    elements.push(
+      <p key={`p-${index}`} className="leading-relaxed text-xs text-gray-200">
+        {parseInline(line)}
+      </p>
+    );
+  }
+
+  if (inTable) {
+    flushTable("end");
+  }
+
+  return <div className="space-y-1">{elements}</div>;
+}
+
 export function AIAssistantDrawer() {
   const [isOpen, setIsOpen] = useState(false);
   const [isMinimized, setIsMinimized] = useState(false);
@@ -247,13 +425,17 @@ export function AIAssistantDrawer() {
 
                       <div className="group relative max-w-[85%]">
                         <div
-                          className={`p-3 rounded-2xl leading-relaxed whitespace-pre-wrap ${
+                          className={`p-3 rounded-2xl leading-relaxed ${
                             isUser
-                              ? "bg-primary text-primary-foreground rounded-tr-xs shadow-md"
+                              ? "bg-primary text-primary-foreground rounded-tr-xs shadow-md whitespace-pre-wrap"
                               : "bg-[#1c1e24] text-gray-100 border border-white/10 rounded-tl-xs shadow-md"
                           }`}
                         >
-                          {msg.content}
+                          {isUser ? (
+                            msg.content
+                          ) : (
+                            <FormattedMarkdown content={msg.content} />
+                          )}
                           {isLastAssistant && loading && (
                             <span className="inline-block w-1.5 h-3.5 ml-1 bg-emerald-400 animate-pulse align-middle" />
                           )}
