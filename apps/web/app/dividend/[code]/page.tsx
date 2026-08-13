@@ -401,7 +401,7 @@ export default function StockDetailPage({ params }: { params: Promise<{ code: st
   }
 
   const stock = stockReport!;
-  const currentQuote = quote && quote.code === code ? quote : null;
+  const currentQuote = quote || null;
   const displayQuote = currentQuote || {
     code: stock.code,
     name: stock.name,
@@ -520,8 +520,22 @@ export default function StockDetailPage({ params }: { params: Promise<{ code: st
       {/* 财报深度分析与排雷卡片 (仅个股展示，指数不展示) */}
       {!isIndex && (
         <FinancialAnalysisCard
-          report={financialAnalysis && financialAnalysis.code === code ? financialAnalysis : null}
-          loading={klineLoading[`financial_${code}`] || !financialAnalysis || financialAnalysis.code !== code}
+          report={
+            financialAnalysis &&
+            (financialAnalysis.code === quote?.code ||
+              financialAnalysis.code === code ||
+              (quote?.name && financialAnalysis.name.replace(/\s+/g, "") === quote.name.replace(/\s+/g, "")))
+              ? financialAnalysis
+              : null
+          }
+          loading={
+            !financialAnalysis ||
+            !(
+              financialAnalysis.code === quote?.code ||
+              financialAnalysis.code === code ||
+              (quote?.name && financialAnalysis.name.replace(/\s+/g, "") === quote.name.replace(/\s+/g, ""))
+            )
+          }
         />
       )}
 
