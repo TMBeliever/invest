@@ -48,7 +48,14 @@ class OpenAIProvider(BaseLLMProvider):
 
         try:
             url = f"{self.base_url}/chat/completions"
-            resp = requests.post(url, headers=headers, json=payload, stream=True, timeout=30)
+            resp = requests.post(
+                url,
+                headers=headers,
+                json=payload,
+                stream=True,
+                timeout=30,
+                proxies={"http": None, "https": None},
+            )
 
             if resp.status_code != 200:
                 logger.error(f"OpenAI API 错误: Status {resp.status_code}, Body: {resp.text}")
