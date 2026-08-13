@@ -59,30 +59,50 @@ def _build_system_prompt(
     bond_10y = overview.get("bondYield10y", 1.71)
     risk_ratio = overview.get("riskPremiumRatio", 3.05)
 
-    # 查寻是否触发单股/财报数据死锁注入
+    # 查寻是否触发单股/多股 Tool Call 数据死锁注入
     fin_context_str = ""
     if user_query:
-        code_match = re.search(r"\b\d{6}\b", user_query)
-        target_code_or_name = None
-        if code_match:
-            target_code_or_name = code_match.group(0)
-        else:
-            # 采用 N-gram 规则从自然语言句子中高精度扫描股票名称（如 "新和成", "伊利股份", "招商银行"）
-            chinese_text = "".join(re.findall(r"[\u4e00-\u9fa5]+", user_query))
-            STOP_WORDS = {"今天", "为什么", "分析", "一下", "怎么", "跌了", "涨了", "帮忙", "解读", "排雷", "表现", "请问", "最近", "怎么回事", "好不好", "多少", "左右", "个点"}
-            for length in [4, 3, 2]:
-                for i in range(len(chinese_text) - length + 1):
-                    sub = chinese_text[i : i + length]
-                    if sub in STOP_WORDS:
-                        continue
-                    code = AKShareClient.resolve_symbol(sub)
-                    if code and code.isdigit() and len(code) == 6:
-                        target_code_or_name = code
-                        break
-                if target_code_or_name:
-                    break
+        matched_symbols = []
+        for code_match in re.finditer(r"\b\d{6}\b", user_query):
+            matched_symbols.append(code_match.group(0))
 
-        if target_code_or_name:
+        chinese_text = "".join(re.findall(r"[\u4e00-\u9fa5]+", user_query))
+        STOP_WORDS = {"今天", "为什么", "分析", "一下", "怎么", "跌了", "涨了", "帮忙", "解读", "排雷", "表现", "请问", "最近", "怎么回事", "好不好", "多少", "左右", "个点", "获取", "股息率", "查询", "对比", "比较", "哪个", "适合"}
+        
+        for length in [4, 3, 2]:
+            for i in range(len(chinese_text) - length + 1):
+                sub = chinese_text[i : i + length]
+                if sub in STOP_WORDS:
+                    continue
+                code = AKShareClient.resolve_symbol(sub)
+                if code and code.isdigit() and len(code) == 6:
+                    if code not in matched_symbols:
+                        matched_symbols.append(code)
+
+        if len(matched_symbols) > 1:
+            try:
+                from app.services.ai_tools import execute_compare_stocks
+                comp_data = execute_compare_stocks(matched_symbols)
+                rows = []
+                for item in comp_data.get("comparison", []):
+                    q = item.get("quote", {})
+                    f = item.get("financial", {})
+                    dup = (f.get("dupont") or {}) if isinstance(f, dict) else {}
+                    rows.append(
+                        f"  * 【{q.get('name', item.get('symbol'))} ({q.get('code')})】: "
+                        f"最新价 ¥{q.get('price')} | 动态股息率 {q.get('dividendYield', '--')}% | "
+                        f"市盈率 PE {q.get('pe', '--')} | 杜邦 ROE {dup.get('roe', '--')}% ({dup.get('businessTypeLabel', '主板')})"
+                    )
+                matrix_str = "\n".join(rows)
+                fin_context_str = f"""
+
+[系统权威【多股对比矩阵】盘中实时数据 (死锁注入)]:
+{matrix_str}"""
+            except Exception as e:
+                logger.error(f"提取多股对比失败: {e}")
+
+        elif len(matched_symbols) == 1:
+            target_code_or_name = matched_symbols[0]
             try:
                 # 1. 提取单股盘中/收盘实时行情
                 q = AKShareClient.get_realtime_quote(target_code_or_name)
