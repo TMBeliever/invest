@@ -1,6 +1,7 @@
 import datetime
 import json
 import logging
+import re
 from typing import Any, Dict, List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -27,7 +28,11 @@ class ChatRequestPayload(BaseModel):
     messages: List[ChatMessagePayload]
 
 
-def _build_system_prompt(user_id: str, session_summary: Optional[str] = None) -> str:
+def _build_system_prompt(
+    user_id: str,
+    session_summary: Optional[str] = None,
+    user_query: Optional[str] = None,
+) -> str:
     now_str = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     weekday_str = ["星期一", "星期二", "星期三", "星期四", "星期五", "星期六", "星期日"][
         datetime.datetime.now().weekday()
@@ -54,6 +59,39 @@ def _build_system_prompt(user_id: str, session_summary: Optional[str] = None) ->
     bond_10y = overview.get("bondYield10y", 1.71)
     risk_ratio = overview.get("riskPremiumRatio", 3.05)
 
+    # 查寻是否触发单股/财报数据死锁注入
+    fin_context_str = ""
+    if user_query:
+        code_match = re.search(r"\b\d{6}\b", user_query)
+        target_code_or_name = None
+        if code_match:
+            target_code_or_name = code_match.group(0)
+        elif "招商银行" in user_query or "招行" in user_query:
+            target_code_or_name = "600036"
+
+        if target_code_or_name:
+            try:
+                fin = AKShareClient.get_financial_analysis_report(target_code_or_name)
+                if fin and fin.get("name"):
+                    dupont = fin.get("dupont", {})
+                    health = fin.get("healthScan", {})
+                    preview = fin.get("earningsPreview", {})
+                    health_items = "\n".join([
+                        f"  * {h['name']}: {h['status']} ({h['valueStr']}) - {h['detail']}"
+                        for h in health.get("items", [])
+                    ])
+
+                    fin_context_str = f"""
+
+[系统权威财报与排雷诊断数据 (死锁注入，绝对不可胡乱篡改)]:
+- 目标股票: {fin.get('name')} ({fin.get('code')})
+- 杜邦拆解分析: ROE {dupont.get('roe')}%, 商业模式: {dupont.get('businessTypeLabel')} - {dupont.get('description')}
+- 4大财报健康度排雷体检:
+{health_items}
+- 业绩前瞻与一致预估: {preview.get('summary')} (分析师预期方向: {preview.get('consensus', {}).get('direction')})"""
+            except Exception as e:
+                logger.error(f"提取财报失败 [{target_code_or_name}]: {e}")
+
     summary_part = f"\n\n[早期对话历史摘要 (保留核心偏好，避免信息丢失)]:\n{session_summary}" if session_summary else ""
 
     return f"""你是一名精通个人资产配置与高股息投资策略的【InvestScope 智能 AI 投资顾问】。
@@ -65,10 +103,10 @@ def _build_system_prompt(user_id: str, session_summary: Optional[str] = None) ->
 - 组合持仓总浮盈: ¥{total_profit:,.2f}
 - 预估年现金流收益: ¥{annual_income:,.2f}/年 (综合被动收益率 {yield_rate}%)
 - 用户真实持仓明细:
-{assets_summary_str if assets_summary_str else "  (暂未录入资产)"}{summary_part}
+{assets_summary_str if assets_summary_str else "  (暂未录入资产)"}{fin_context_str}{summary_part}
 
 [回答准则与防幻觉铁律]:
-1. **绝对禁止胡乱记忆或推测**股价、财务数据或收益率。所有关于用户资产、单股价格与大盘的提问，必须严格基于上方给出的真实上下文数据！
+1. **绝对禁止胡乱记忆或推测**股价、财务数据或收益率。所有关于用户资产、单股价格、财报与大盘的提问，必须严格基于上方给出的真实上下文数据！
 2. 语言风格亲切、专业、洞察深刻。多用 Markdown 标题、加粗、列表与引用卡片。
 3. 结合用户持仓的集中度、现金仓比例与被动收益率，给出具有可操作性的风控或调仓建议。
 4. 如果提问超出金融投资范畴，请友好引导回资产配置与投资规划。
@@ -125,7 +163,6 @@ def chat_stream(
     session_id = payload.sessionId
 
     if not session_id:
-        # 如果没有传入 session_id，则新建一个
         session_id = storage_db.create_chat_session(user_id, "新对话")
 
     session = storage_db.get_chat_session(session_id, user_id)
@@ -150,22 +187,20 @@ def chat_stream(
 
     # 智能上下文压缩算法 (Summary + Buffer Window)
     session_summary = session.get("summary")
-    MAX_BUFFER_WINDOW = 6  # 保留最近 6 轮逐字明细
+    MAX_BUFFER_WINDOW = 6
 
     if len(all_db_msgs) > MAX_BUFFER_WINDOW + 2:
-        # 老旧消息取前 N-6 轮，生成更精炼的摘要
         old_msgs = all_db_msgs[:-MAX_BUFFER_WINDOW]
         summary_lines = [f"{m['role']}: {m['content'][:80]}" for m in old_msgs]
         new_summary = "早期对话要点：\n" + "\n".join(summary_lines[-6:])
         storage_db.update_chat_session(session_id, summary=new_summary)
         session_summary = new_summary
 
-        # 发给大模型的消息只保留最近 6 轮
         llm_messages = [{"role": m["role"], "content": m["content"]} for m in all_db_msgs[-MAX_BUFFER_WINDOW:]]
     else:
         llm_messages = [{"role": m["role"], "content": m["content"]} for m in all_db_msgs]
 
-    system_prompt = _build_system_prompt(user_id, session_summary)
+    system_prompt = _build_system_prompt(user_id, session_summary, user_msg_content)
     llm = get_llm_provider()
 
     def event_generator():
@@ -176,7 +211,6 @@ def chat_stream(
                 data = json.dumps({"content": chunk, "sessionId": session_id}, ensure_ascii=False)
                 yield f"data: {data}\n\n"
             
-            # SSE 播放完成后落库助手回复
             if full_reply.strip():
                 storage_db.add_chat_message(session_id, "assistant", full_reply)
 
