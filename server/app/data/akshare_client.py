@@ -808,6 +808,76 @@ class AKShareClient:
 
         return results
 
+    _SYMBOL_CACHE: Dict[str, str] = {}
+
+    @staticmethod
+    def resolve_symbol(query: str) -> str:
+        """
+        全量智能股票代码解析引擎 (支持 A股/港股/美股/基金 中文名、拼音缩写及6位代码)。
+        例如: "新和成" -> "002001", "贵州茅台" -> "600519", "AAPL" -> "AAPL"
+        """
+        q = str(query).strip()
+        if not q:
+            return q
+
+        # 1. 已经是 6 位数字代码或美股格式，直接返回
+        if q.isdigit() and len(q) == 6:
+            return q
+        if q.isalpha() and q.isupper() and len(q) <= 5:
+            return q
+
+        # 2. 内存缓存
+        if q in AKShareClient._SYMBOL_CACHE:
+            return AKShareClient._SYMBOL_CACHE[q]
+
+        # 3. 常见特例快捷映射
+        name_map = {
+            "招商银行": "600036", "招行": "600036",
+            "贵州茅台": "600519", "茅台": "600519",
+            "建设银行": "601939", "中国平安": "601318",
+            "长江电力": "600900", "中国神华": "601088",
+            "新奥股份": "600803", "格力电器": "000651",
+            "新和成": "002001",
+            "腾讯控股": "00700", "腾讯": "00700",
+            "阿里巴巴": "09988", "阿里": "09988",
+            "苹果": "AAPL", "英伟达": "NVDA", "特斯拉": "TSLA",
+        }
+        if q in name_map:
+            AKShareClient._SYMBOL_CACHE[q] = name_map[q]
+            return name_map[q]
+
+        # 4. 调取 东方财富 极速 Suggest API (毫秒级响应 5000+ A股/港/美全量股票)
+        try:
+            url = f"https://searchapi.eastmoney.com/api/suggest/get?input={q}&type=14"
+            resp = requests.get(url, timeout=3).json()
+            items = resp.get("QuotationCodeTable", {}).get("Data", [])
+            if items:
+                code = items[0].get("Code")
+                if code:
+                    AKShareClient._SYMBOL_CACHE[q] = code
+                    return code
+        except Exception as e:
+            logger.warning(f"东方财富搜索 API 失败 [{q}]: {e}")
+
+        # 5. 调取 新浪 Suggest API 作为二次兜底
+        try:
+            url = f"http://suggest3.sinajs.cn/suggest/type=11,12,31,41&key={q}&name=suggestdata"
+            resp = requests.get(url, timeout=3, headers={"Referer": "https://finance.sina.com.cn"})
+            if resp.status_code == 200 and 'suggestdata="' in resp.text:
+                raw = resp.text.split('suggestdata="')[1].rstrip('";').rstrip('"')
+                if raw and raw != "N":
+                    first_entry = raw.split(";")[0]
+                    parts = first_entry.split(",")
+                    if len(parts) >= 3:
+                        code = parts[2].strip()
+                        if code:
+                            AKShareClient._SYMBOL_CACHE[q] = code
+                            return code
+        except Exception as e:
+            logger.warning(f"新浪搜索 API 失败 [{q}]: {e}")
+
+        return q
+
     # ─── 单股体检报告 ───────────────────────────────────────────────────
 
     @staticmethod
@@ -817,19 +887,8 @@ class AKShareClient:
         所有行情数据来自腾讯实时 API，评分维度为量化模型分（明确标注）。
         """
         query = str(code_or_name).strip()
+        target_code = AKShareClient.resolve_symbol(query)
 
-        # 中文名称 → 代码
-        name_map = {
-            "招商银行": "600036", "招商": "600036",
-            "贵州茅台": "600519", "茅台": "600519",
-            "建设银行": "601939", "中国平安": "601318",
-            "长江电力": "600900", "中国神华": "601088",
-            "新奥股份": "600803", "格力电器": "000651",
-            "腾讯控股": "00700", "腾讯": "00700",
-            "阿里巴巴": "09988", "阿里": "09988",
-            "苹果": "AAPL", "英伟达": "NVDA", "特斯拉": "TSLA",
-        }
-        target_code = name_map.get(query, query)
         if not target_code:
             raise ValueError(f"无法识别股票代码或名称：{query}")
 

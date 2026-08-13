@@ -66,8 +66,13 @@ def _build_system_prompt(
         target_code_or_name = None
         if code_match:
             target_code_or_name = code_match.group(0)
-        elif "招商银行" in user_query or "招行" in user_query:
-            target_code_or_name = "600036"
+        else:
+            # 清理常见非股票助词，智能解析提问中的股票名称（如 "新和成", "伊利股份", "招商银行"）
+            cleaned_query = re.sub(r'(帮我|解读|分析|财报|股票|持仓|排雷|体检|最新|评估|建议|情况|怎么样|好不好)', '', user_query).strip()
+            if cleaned_query:
+                resolved = AKShareClient.resolve_symbol(cleaned_query[:8])
+                if resolved and resolved.isdigit():
+                    target_code_or_name = resolved
 
         if target_code_or_name:
             try:
