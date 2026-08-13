@@ -39,10 +39,11 @@ class StorageDB:
                 PRIMARY KEY (code, data_type)
             )
             """)
-            # 组合持仓表
+            # 组合持仓表 (包含 user_id)
             cursor.execute("""
             CREATE TABLE IF NOT EXISTS holdings (
                 id TEXT PRIMARY KEY,
+                user_id TEXT,
                 code TEXT NOT NULL,
                 name TEXT NOT NULL,
                 category TEXT NOT NULL,
@@ -51,26 +52,18 @@ class StorageDB:
                 current_price REAL NOT NULL
             )
             """)
-            # 如果是空表，插入默认的示范持仓
-            cursor.execute("SELECT COUNT(*) FROM holdings")
-            count = cursor.fetchone()[0]
-            if count == 0:
-                default_holdings = [
-                    ("h1", "510880", "红利ETF", "CORE_DIVIDEND", 100000.0, 3.12, 3.45),
-                    ("h2", "601939", "建设银行", "CORE_DIVIDEND", 40000.0, 6.50, 7.80),
-                    ("h3", "511010", "国债ETF", "CORE_BOND", 6000.0, 102.50, 104.20),
-                    ("h4", "510300", "沪深300ETF", "SATELLITE_INDEX", 80000.0, 3.80, 4.15),
-                    ("h5", "159915", "创业板ETF", "SATELLITE_SECTOR", 120000.0, 1.95, 2.05),
-                    ("h6", "CASH", "货币基金/现金", "RESERVE_CASH", 174367.89, 1.00, 1.00),
-                ]
-                cursor.executemany("""
-                INSERT INTO holdings (id, code, name, category, shares, cost_price, current_price)
-                VALUES (?, ?, ?, ?, ?, ?, ?)
-                """, default_holdings)
-            # 多品类资产统一表 (DEPOSIT / STOCK / FUND / WEALTH / OTHER)
+            cursor.execute("PRAGMA table_info(holdings)")
+            holding_cols = {row[1] for row in cursor.fetchall()}
+            if "user_id" not in holding_cols:
+                cursor.execute("ALTER TABLE holdings ADD COLUMN user_id TEXT")
+
+            cursor.execute("CREATE INDEX IF NOT EXISTS idx_holdings_user_id ON holdings(user_id)")
+
+            # 多品类资产统一表 (DEPOSIT / STOCK / FUND / WEALTH / OTHER，包含 user_id)
             cursor.execute("""
             CREATE TABLE IF NOT EXISTS assets (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
+                user_id TEXT,
                 category TEXT NOT NULL,
                 name TEXT NOT NULL,
                 code TEXT,
@@ -87,51 +80,35 @@ class StorageDB:
             )
             """)
 
-            # 兼容旧数据库文件：如果表已存在但缺少 fund_type 列，补一列
             cursor.execute("PRAGMA table_info(assets)")
-            existing_cols = {row[1] for row in cursor.fetchall()}
-            if "fund_type" not in existing_cols:
+            asset_cols = {row[1] for row in cursor.fetchall()}
+            if "fund_type" not in asset_cols:
                 cursor.execute("ALTER TABLE assets ADD COLUMN fund_type TEXT")
-                # 已有的 FUND 记录默认视为场内 ETF（此前唯一支持的行情来源）
-                cursor.execute("UPDATE assets SET fund_type = 'EXCHANGE' WHERE category = 'FUND' AND fund_type IS NULL")
+            if "user_id" not in asset_cols:
+                cursor.execute("ALTER TABLE assets ADD COLUMN user_id TEXT")
 
-            cursor.execute("SELECT COUNT(*) FROM assets")
-            asset_count = cursor.fetchone()[0]
-            if asset_count == 0:
-                default_assets = [
-                    ("DEPOSIT", "招商银行活期存款", None, 200000.0, None, None, 0.2, "DEMAND", None, None, "日常应急流动资金"),
-                    ("DEPOSIT", "工商银行3年定期", None, 300000.0, None, None, 2.3, "FIXED", "2027-06-15", None, "稳健定期利息收息"),
-                    ("STOCK", "招商银行", "600036", None, 10000.0, 32.5, None, None, None, None, "核心收息底仓"),
-                    ("STOCK", "贵州茅台", "600519", None, 200.0, 1450.0, None, None, None, None, "高端白酒龙头"),
-                    ("FUND", "易方达沪深300ETF", "510300", None, 50000.0, 3.85, None, None, None, "EXCHANGE", "宽基指数配置 (场内ETF)"),
-                    ("FUND", "易方达中小盘混合", "110011", None, 8000.0, 3.20, None, None, None, "OTC", "场外主动权益基金"),
-                    ("WEALTH", "建行日日鑫理财", None, 150000.0, None, None, 2.85, None, "2026-12-31", None, "短债稳健理财"),
-                    ("OTHER", "黄金积存", None, 35000.0, None, None, None, None, None, None, "避险资产配置"),
-                ]
-                cursor.executemany("""
-                INSERT INTO assets (category, name, code, amount, shares, cost_price, annual_rate, deposit_type, maturity_date, fund_type, notes)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                """, default_assets)
+            cursor.execute("CREATE INDEX IF NOT EXISTS idx_assets_user_id ON assets(user_id)")
 
             conn.commit()
 
-    # ─── 资产管理 (多品类) ───────────────────────────────────────
+    # ─── 资产管理 (多品类 & 按用户隔离) ───────────────────────────
 
-    def get_all_assets(self) -> List[Dict[str, Any]]:
+    def get_all_assets(self, user_id: str) -> List[Dict[str, Any]]:
         with self._get_conn() as conn:
             conn.row_factory = sqlite3.Row
             cursor = conn.cursor()
-            cursor.execute("SELECT * FROM assets ORDER BY id DESC")
+            cursor.execute("SELECT * FROM assets WHERE user_id = ? ORDER BY id DESC", (user_id,))
             rows = cursor.fetchall()
             return [dict(row) for row in rows]
 
-    def add_asset(self, data: Dict[str, Any]) -> int:
+    def add_asset(self, user_id: str, data: Dict[str, Any]) -> int:
         with self._get_conn() as conn:
             cursor = conn.cursor()
             cursor.execute("""
-            INSERT INTO assets (category, name, code, amount, shares, cost_price, annual_rate, deposit_type, maturity_date, fund_type, notes)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            INSERT INTO assets (user_id, category, name, code, amount, shares, cost_price, annual_rate, deposit_type, maturity_date, fund_type, notes)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """, (
+                user_id,
                 data.get("category"),
                 data.get("name"),
                 data.get("code"),
@@ -147,7 +124,7 @@ class StorageDB:
             conn.commit()
             return cursor.lastrowid
 
-    def update_asset(self, asset_id: int, data: Dict[str, Any]) -> bool:
+    def update_asset(self, asset_id: int, user_id: str, data: Dict[str, Any]) -> bool:
         with self._get_conn() as conn:
             cursor = conn.cursor()
             cursor.execute("""
@@ -164,7 +141,7 @@ class StorageDB:
                 fund_type = ?,
                 notes = ?,
                 updated_at = datetime('now')
-            WHERE id = ?
+            WHERE id = ? AND user_id = ?
             """, (
                 data.get("category"),
                 data.get("name"),
@@ -177,15 +154,16 @@ class StorageDB:
                 data.get("maturity_date"),
                 data.get("fund_type"),
                 data.get("notes"),
-                asset_id
+                asset_id,
+                user_id
             ))
             conn.commit()
             return cursor.rowcount > 0
 
-    def delete_asset(self, asset_id: int) -> bool:
+    def delete_asset(self, asset_id: int, user_id: str) -> bool:
         with self._get_conn() as conn:
             cursor = conn.cursor()
-            cursor.execute("DELETE FROM assets WHERE id = ?", (asset_id,))
+            cursor.execute("DELETE FROM assets WHERE id = ? AND user_id = ?", (asset_id, user_id))
             conn.commit()
             return cursor.rowcount > 0
 
@@ -237,13 +215,13 @@ class StorageDB:
             conn.commit()
         return self.get_user_by_id(user_id)
 
-    # ─── 持仓 ───────────────────────────────────────────────────
+    # ─── 持仓 (按用户隔离) ───────────────────────────────────────
 
-    def get_all_holdings(self) -> List[Dict[str, Any]]:
+    def get_all_holdings(self, user_id: str) -> List[Dict[str, Any]]:
         with self._get_conn() as conn:
             conn.row_factory = sqlite3.Row
             cursor = conn.cursor()
-            cursor.execute("SELECT * FROM holdings")
+            cursor.execute("SELECT * FROM holdings WHERE user_id = ?", (user_id,))
             rows = cursor.fetchall()
             result = []
             for row in rows:
@@ -258,15 +236,16 @@ class StorageDB:
                 })
             return result
 
-    def add_holding(self, holding: Dict[str, Any]):
+    def add_holding(self, user_id: str, holding: Dict[str, Any]):
         holding_id = holding.get("id") or str(uuid.uuid4())
         with self._get_conn() as conn:
             cursor = conn.cursor()
             cursor.execute("""
-            INSERT INTO holdings (id, code, name, category, shares, cost_price, current_price)
-            VALUES (?, ?, ?, ?, ?, ?, ?)
+            INSERT INTO holdings (id, user_id, code, name, category, shares, cost_price, current_price)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
             """, (
                 holding_id,
+                user_id,
                 holding["code"],
                 holding["name"],
                 holding["category"],
@@ -277,10 +256,10 @@ class StorageDB:
             conn.commit()
         return holding_id
 
-    def delete_holding(self, holding_id: str):
+    def delete_holding(self, holding_id: str, user_id: str):
         with self._get_conn() as conn:
             cursor = conn.cursor()
-            cursor.execute("DELETE FROM holdings WHERE id = ?", (holding_id,))
+            cursor.execute("DELETE FROM holdings WHERE id = ? AND user_id = ?", (holding_id, user_id))
             conn.commit()
 
     def get_financial_cache(self, code: str, data_type: str) -> Optional[str]:

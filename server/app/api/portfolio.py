@@ -1,13 +1,15 @@
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Depends
 from typing import List, Dict, Any
 from app.data.storage import storage_db
+from app.services.auth import get_current_user
 
 router = APIRouter()
 
 @router.get("/summary")
-def get_portfolio_summary() -> Dict[str, Any]:
-    """获取真实持久化的组合概览"""
-    raw_holdings = storage_db.get_all_holdings()
+def get_portfolio_summary(current_user: Dict[str, Any] = Depends(get_current_user)) -> Dict[str, Any]:
+    """获取真实持久化的组合概览 (按当前登录用户隔离)"""
+    user_id = current_user["id"]
+    raw_holdings = storage_db.get_all_holdings(user_id)
     
     processed_holdings = []
     total_assets = 0.0
@@ -47,15 +49,15 @@ def get_portfolio_summary() -> Dict[str, Any]:
     total_profit_loss = total_assets - total_cost
     total_profit_loss_pct = round((total_profit_loss / total_cost * 100), 2) if total_cost > 0 else 0.0
 
-    core_pct = round((category_totals["CORE"] / total_assets * 100), 1) if total_assets > 0 else 60.0
-    satellite_pct = round((category_totals["SATELLITE"] / total_assets * 100), 1) if total_assets > 0 else 30.0
-    reserve_pct = round((category_totals["RESERVE"] / total_assets * 100), 1) if total_assets > 0 else 10.0
+    core_pct = round((category_totals["CORE"] / total_assets * 100), 1) if total_assets > 0 else 0.0
+    satellite_pct = round((category_totals["SATELLITE"] / total_assets * 100), 1) if total_assets > 0 else 0.0
+    reserve_pct = round((category_totals["RESERVE"] / total_assets * 100), 1) if total_assets > 0 else 0.0
 
     return {
         "totalAssets": round(total_assets, 2),
         "totalProfitLoss": round(total_profit_loss, 2),
         "totalProfitLossPct": total_profit_loss_pct,
-        "annualizedReturn": 10.2,
+        "annualizedReturn": 0.0 if total_assets == 0 else 10.2,
         "allocation": {
             "core": core_pct,
             "satellite": satellite_pct,
@@ -70,21 +72,23 @@ def get_portfolio_summary() -> Dict[str, Any]:
     }
 
 @router.post("/holdings")
-def add_holding(holding: Dict[str, Any]) -> Dict[str, Any]:
-    """新增持仓项存入 SQLite"""
-    new_id = storage_db.add_holding(holding)
+def add_holding(holding: Dict[str, Any], current_user: Dict[str, Any] = Depends(get_current_user)) -> Dict[str, Any]:
+    """新增持仓项存入 SQLite (关联 user_id)"""
+    user_id = current_user["id"]
+    new_id = storage_db.add_holding(user_id, holding)
     return {"status": "ok", "id": new_id}
 
 @router.delete("/holdings/{id}")
-def delete_holding(id: str) -> Dict[str, Any]:
+def delete_holding(id: str, current_user: Dict[str, Any] = Depends(get_current_user)) -> Dict[str, Any]:
     """删除持仓项"""
-    storage_db.delete_holding(id)
+    user_id = current_user["id"]
+    storage_db.delete_holding(id, user_id)
     return {"status": "ok"}
 
 @router.get("/rebalance-signals")
-def get_rebalance_signals() -> List[Dict[str, Any]]:
+def get_rebalance_signals(current_user: Dict[str, Any] = Depends(get_current_user)) -> List[Dict[str, Any]]:
     """根据实际权重与目标权重自动计算再平衡信号"""
-    summary = get_portfolio_summary()
+    summary = get_portfolio_summary(current_user)
     alloc = summary["allocation"]
     target = summary["targetAllocation"]
     

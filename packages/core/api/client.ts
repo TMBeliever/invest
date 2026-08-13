@@ -26,8 +26,25 @@ class ApiClient {
     const headers: Record<string, string> = {
       "Content-Type": "application/json",
     };
-    if (this.token) {
-      headers["Authorization"] = `Bearer ${this.token}`;
+
+    let activeToken = this.token;
+    if (!activeToken && typeof window !== "undefined") {
+      try {
+        const stored = localStorage.getItem("investscope-auth");
+        if (stored) {
+          const parsed = JSON.parse(stored);
+          if (parsed?.state?.token) {
+            activeToken = parsed.state.token;
+            this.token = activeToken;
+          }
+        }
+      } catch {
+        // ignore localStorage parse error
+      }
+    }
+
+    if (activeToken) {
+      headers["Authorization"] = `Bearer ${activeToken}`;
     }
 
     const res = await fetch(`${this.baseUrl}${path}`, {

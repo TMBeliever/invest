@@ -1,8 +1,9 @@
 import logging
 from typing import Any, Dict, List, Optional
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Depends
 from pydantic import BaseModel
+from app.services.auth import get_current_user
 
 from app.data.akshare_client import _batch_tencent_quote, get_otc_fund_nav
 from app.data.storage import storage_db
@@ -156,8 +157,9 @@ def _enrich_assets(raw_assets: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
 
 
 @router.get("/summary")
-def get_assets_summary() -> Dict[str, Any]:
-    raw_assets = storage_db.get_all_assets()
+def get_assets_summary(current_user: Dict[str, Any] = Depends(get_current_user)) -> Dict[str, Any]:
+    user_id = current_user["id"]
+    raw_assets = storage_db.get_all_assets(user_id)
     assets = _enrich_assets(raw_assets)
 
     total_value = sum(a["currentValue"] for a in assets)
@@ -204,24 +206,27 @@ def _validate_payload(body: AssetPayload) -> None:
 
 
 @router.post("", status_code=201)
-def add_asset(body: AssetPayload) -> Dict[str, Any]:
+def add_asset(body: AssetPayload, current_user: Dict[str, Any] = Depends(get_current_user)) -> Dict[str, Any]:
     _validate_payload(body)
-    asset_id = storage_db.add_asset(body.to_storage_dict())
+    user_id = current_user["id"]
+    asset_id = storage_db.add_asset(user_id, body.to_storage_dict())
     return {"status": "ok", "id": asset_id}
 
 
 @router.put("/{asset_id}")
-def update_asset(asset_id: int, body: AssetPayload) -> Dict[str, Any]:
+def update_asset(asset_id: int, body: AssetPayload, current_user: Dict[str, Any] = Depends(get_current_user)) -> Dict[str, Any]:
     _validate_payload(body)
-    ok = storage_db.update_asset(asset_id, body.to_storage_dict())
+    user_id = current_user["id"]
+    ok = storage_db.update_asset(asset_id, user_id, body.to_storage_dict())
     if not ok:
-        raise HTTPException(status_code=404, detail="资产不存在")
+        raise HTTPException(status_code=404, detail="资产不存在或无权限编辑")
     return {"status": "ok"}
 
 
 @router.delete("/{asset_id}")
-def delete_asset(asset_id: int) -> Dict[str, Any]:
-    ok = storage_db.delete_asset(asset_id)
+def delete_asset(asset_id: int, current_user: Dict[str, Any] = Depends(get_current_user)) -> Dict[str, Any]:
+    user_id = current_user["id"]
+    ok = storage_db.delete_asset(asset_id, user_id)
     if not ok:
-        raise HTTPException(status_code=404, detail="资产不存在")
+        raise HTTPException(status_code=404, detail="资产不存在或无权限删除")
     return {"status": "ok"}
