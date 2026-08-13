@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import { useAssetStore, apiClient } from "@investscope/core";
 import { AssetAllocationChart, SegmentedTabs } from "@investscope/ui";
 import type { AssetCategory, AssetItem, AssetPayload } from "@investscope/data/schemas";
+import { AIPortfolioCard } from "../components/ai-portfolio-card";
 import {
   Wallet,
   Plus,
@@ -243,6 +244,11 @@ export default function AssetsPage() {
             添加资产
           </button>
         </div>
+      </div>
+
+      {/* AI 组合体检卡片 */}
+      <div className="mb-6">
+        <AIPortfolioCard />
       </div>
 
       {/* 汇总卡片 */}

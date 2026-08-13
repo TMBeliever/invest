@@ -509,3 +509,26 @@ export type AssetPayload = {
   fundType?: FundType | null;
   notes?: string | null;
 };
+
+// ─── AI 智能助手类型定义 ─────────────────────────────────────────
+
+export const AIChatMessageSchema = z.object({
+  id: z.string(),
+  role: z.enum(["user", "assistant", "system"]),
+  content: z.string(),
+  timestamp: z.string().optional(),
+});
+export type AIChatMessage = z.infer<typeof AIChatMessageSchema>;
+
+export const AIDiagnoseSchema = z.object({
+  score: z.number(),
+  scoreLabel: z.string(),
+  yieldRate: z.number(),
+  bondYield10y: z.number(),
+  annualIncome: z.number(),
+  topAssetName: z.string().nullable().optional(),
+  topAssetPct: z.number().nullable().optional(),
+  diagnosisText: z.array(z.string()),
+  updatedAt: z.string(),
+});
+export type AIDiagnose = z.infer<typeof AIDiagnoseSchema>;
