@@ -17,6 +17,7 @@ services:
       - PYTHONUNBUFFERED=1
       - PYTHONPATH=/app
       - DB_PATH=/app/docker-db/investscope.db
+      - JWT_SECRET_KEY=investscope_prod_jwt_secret_key_2026
       - TZ=Asia/Shanghai
 
   # 2. Next.js 前端服务 (宿主机 3006 端口 -> 容器 3000 端口)
