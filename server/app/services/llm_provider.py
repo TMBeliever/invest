@@ -5,6 +5,8 @@ import requests
 from typing import Any, Dict, Generator, List, Optional
 from abc import ABC, abstractmethod
 
+from app.config import settings
+
 logger = logging.getLogger(__name__)
 
 
@@ -19,9 +21,9 @@ class BaseLLMProvider(ABC):
 
 class OpenAIProvider(BaseLLMProvider):
     def __init__(self, api_key: Optional[str] = None, base_url: Optional[str] = None, model: Optional[str] = None):
-        self.api_key = api_key or os.environ.get("OPENAI_API_KEY")
-        self.base_url = (base_url or os.environ.get("OPENAI_BASE_URL") or "https://api.openai.com/v1").rstrip("/")
-        self.model = model or os.environ.get("OPENAI_MODEL") or "gpt-4o-mini"
+        self.api_key = api_key or os.environ.get("OPENAI_API_KEY") or settings.OPENAI_API_KEY
+        self.base_url = (base_url or os.environ.get("OPENAI_BASE_URL") or settings.OPENAI_BASE_URL).rstrip("/")
+        self.model = model or os.environ.get("OPENAI_MODEL") or settings.OPENAI_MODEL
 
     def stream_chat(
         self, messages: List[Dict[str, str]], system_prompt: str

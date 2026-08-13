@@ -19,6 +19,11 @@ class Settings(BaseSettings):
     JWT_ALGORITHM: str = "HS256"
     JWT_EXPIRE_DAYS: int = 30
 
+    LLM_PROVIDER: str = "openai"
+    OPENAI_API_KEY: str = "sk-e791d0aM4gBc0LecuLK6UFytc4pQSPGw99gD7a6SqS28mSSf"
+    OPENAI_BASE_URL: str = "http://43.155.186.45:3000/v1"
+    OPENAI_MODEL: str = "gemini-2.5-flash"
+
     class Config:
         case_sensitive = True
         env_file = ".env"
