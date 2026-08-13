@@ -90,6 +90,8 @@ def _build_system_prompt(
                 if q:
                     quote_str = (
                         f"最新价: ¥{q['price']} | 今日涨跌幅: {q['changePct']}% ({'+' if q['change'] > 0 else ''}{q['change']}元) | "
+                        f"最新盘中动态股息率: {q.get('dividendYield', '--')}% | "
+                        f"市盈率 PE: {q.get('pe', '--')} | 市净率 PB: {q.get('pb', '--')} | "
                         f"今开: ¥{q['open']} | 昨收: ¥{q['prevClose']} | 最高: ¥{q['high']} | 最低: ¥{q['low']}"
                     )
 
