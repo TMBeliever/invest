@@ -50,6 +50,13 @@ function formatMoney(n: number | null | undefined) {
   return `¥${n.toLocaleString("zh-CN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 }
 
+function formatPrice(n: number | null | undefined, isFundOrEtf = false) {
+  if (n === null || n === undefined || isNaN(n)) return "--";
+  // 基金/场内ETF 或单价小于 100 元的持仓单价，统一保留 4 位高精度单价（如 1.1500 / 1.1510 / 1.1128）
+  const digits = isFundOrEtf || (n > 0 && n < 100) ? 4 : 2;
+  return n.toLocaleString("zh-CN", { minimumFractionDigits: digits, maximumFractionDigits: 4 });
+}
+
 export default function AssetsPage() {
   const { summary, loading, fetchSummary, addAsset, updateAsset, deleteAsset } = useAssetStore();
   const [filterCategory, setFilterCategory] = useState<AssetCategory | "ALL">("ALL");
@@ -325,10 +332,10 @@ export default function AssetsPage() {
                       {isPosition ? (a.shares ?? 0).toLocaleString() : formatMoney(a.amount)}
                     </td>
                     <td className="py-3.5 px-4 text-right font-mono text-default-400">
-                      {isPosition ? `¥${a.costPrice ?? "--"}` : a.annualRate != null ? `${a.annualRate}%` : "--"}
+                      {isPosition ? `¥${formatPrice(a.costPrice, a.category === "FUND")}` : a.annualRate != null ? `${a.annualRate}%` : "--"}
                     </td>
                     <td className="py-3.5 px-4 text-right font-mono font-medium">
-                      {isPosition ? `¥${a.currentPrice ?? "--"}` : "--"}
+                      {isPosition ? `¥${formatPrice(a.currentPrice, a.category === "FUND")}` : "--"}
                       {a.category === "STOCK" && a.dividendYield != null && (
                         <div className="flex flex-col items-end text-[10px] leading-tight mt-0.5">
                           <span className="text-emerald-400 font-medium" title="最新盘中市场股息率">最新 {a.dividendYield}%</span>
@@ -459,7 +466,7 @@ export default function AssetsPage() {
                   {lookupInfo?.found && (
                     <div className="text-xs text-emerald-400 bg-emerald-500/10 border border-emerald-500/20 rounded-xl px-3 py-2 mt-2 flex items-center justify-between animate-fade-in">
                       <span>✨ 已匹配：<strong>{lookupInfo.name}</strong> ({lookupInfo.category === "STOCK" ? "股票" : "基金"})</span>
-                      {lookupInfo.currentPrice && <span>盘中价 <strong>¥{lookupInfo.currentPrice}</strong></span>}
+                      {lookupInfo.currentPrice && <span>{lookupInfo.category === "FUND" ? "单位净值" : "盘中价"} <strong>¥{formatPrice(lookupInfo.currentPrice, lookupInfo.category === "FUND")}</strong></span>}
                     </div>
                   )}
                 </div>
