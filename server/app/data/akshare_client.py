@@ -289,38 +289,45 @@ class AKShareClient:
         3. 股债风险溢价比（红利股息率 vs 10年国债）
         4. 申万重点红利/防御行业风向
         """
-        codes = [
+        # 1. 抓取 A 股与港股大盘核心指数 (腾讯 API)
+        cn_hk_codes = [
             "sh000001", "sz399001", "sz399006", "sh000922",
-            "sh000300", "sh000905", "sh588000", "r_HSI", "r_HSCEI"
+            "sh000300", "sh000905", "sh588000", "r_HSI", "hkHSCEI", "hkHSTECH"
         ]
         indices = []
         try:
-            url = "http://qt.gtimg.cn/q=" + ",".join(codes)
+            url = "http://qt.gtimg.cn/q=" + ",".join(cn_hk_codes)
             resp = requests.get(url, timeout=4)
             if resp.status_code == 200:
                 for line in resp.text.strip().split(";\n"):
                     if '="' in line:
                         parts = line.split('="')[1].split('"')[0].split("~")
                         if len(parts) > 32:
-                            code = parts[2]
+                            raw_code = parts[2]
                             name = parts[1]
                             price = float(parts[3])
                             change = float(parts[31]) if parts[31] else 0.0
                             change_pct = float(parts[32]) if parts[32] else 0.0
-                            amount = float(parts[37]) if len(parts) > 37 and parts[37] else 0.0
+                            amount_val = float(parts[37]) if len(parts) > 37 and parts[37] else 0.0
+
+                            clean_code = raw_code.replace("sh", "").replace("sz", "")
+                            category = "HK" if raw_code.startswith("r_") or raw_code.startswith("hk") or clean_code in ["HSI", "HSCEI", "HSTECH"] else "CN"
+
                             indices.append({
-                                "code": code,
+                                "code": clean_code,
                                 "name": name,
-                                "price": price,
-                                "change": change,
-                                "changePct": change_pct,
-                                "amount": round(amount / 10000, 2),  # 亿元
+                                "price": round(price, 2),
+                                "change": round(change, 2),
+                                "changePct": round(change_pct, 2),
+                                "amount": round(amount_val / 10000, 2) if amount_val > 0 else None,
+                                "category": category,
                             })
         except Exception as e:
-            logger.error(f"全景指数获取失败: {e}")
+            logger.error(f"A股及港股指数获取失败: {e}")
 
-        # 获取美股（道琼斯、标普500、纳斯达克、纳指100）及全球指数实时行情 (腾讯秒级 API)
+        # 2. 抓取美股与日韩全球指数 (腾讯 + 新浪 API)
         try:
+            # 2.1 美股四大指数 (腾讯秒级 API)
             us_url = "http://qt.gtimg.cn/q=us.DJI,us.INX,us.IXIC,usNDX"
             us_resp = requests.get(us_url, timeout=3)
             us_map = {
@@ -345,10 +352,36 @@ class AKShareClient:
                                 "change": round(float(parts[31]), 2),
                                 "changePct": round(float(parts[32]), 2),
                                 "amount": None,
-                                "category": "GLOBAL",
+                                "category": "US",
+                            })
+
+            # 2.2 日经225与韩国KOSPI (新浪 API)
+            headers = {"Referer": "https://finance.sina.com.cn"}
+            asia_map = {
+                "int_nikkei": ("N225", "日经225"),
+                "b_KOSPI": ("KOSPI", "韩国KOSPI"),
+            }
+            asia_url = "https://hq.sinajs.cn/list=" + ",".join(asia_map.keys())
+            asia_resp = requests.get(asia_url, headers=headers, timeout=3)
+            if asia_resp.status_code == 200:
+                for line in asia_resp.text.strip().split(";\n"):
+                    if '="' in line:
+                        k_part = line.split("var hq_str_")[1].split('="')[0]
+                        val_part = line.split('="')[1].split('"')[0]
+                        if val_part and k_part in asia_map:
+                            a_code, a_name = asia_map[k_part]
+                            a_parts = val_part.split(",")
+                            indices.append({
+                                "code": a_code,
+                                "name": a_name,
+                                "price": round(float(a_parts[1]), 2),
+                                "change": round(float(a_parts[2]), 2),
+                                "changePct": round(float(a_parts[3]), 2),
+                                "amount": None,
+                                "category": "ASIA",
                             })
         except Exception as e:
-            logger.warning(f"全球美股实时指数获取失败: {e}")
+            logger.warning(f"美股及日韩指数获取失败: {e}")
 
         sh_amt = next((x["amount"] for x in indices if x["code"] == "000001" and x.get("amount")), 0.0)
         sz_amt = next((x["amount"] for x in indices if x["code"] == "399001" and x.get("amount")), 0.0)
