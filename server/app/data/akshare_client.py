@@ -116,15 +116,20 @@ def _parse_tencent_line(line: str) -> Optional[Dict[str, Any]]:
         if len(parts) > 64 and parts[64]:
             div_yield = _safe_float(parts[64])
 
+        # ETF / 基金 / 100元以下证券保留 4 位高精度单价，避免截断到 2 位小数导致与券商内部 4 位精度结算产生浮盈偏差
+        precise_price = round(price, 4) if price < 100 else round(price, 2)
+
         return {
-            "name": name, "code": code, "price": round(price, 2),
-            "prevClose": round(prev_close, 2), "open": round(open_p, 2),
-            "high": round(high_p, 2), "low": round(low_p, 2),
+            "name": name, "code": code, "price": precise_price,
+            "prevClose": round(prev_close, 4) if prev_close < 100 else round(prev_close, 2),
+            "open": round(open_p, 4) if open_p < 100 else round(open_p, 2),
+            "high": round(high_p, 4) if high_p < 100 else round(high_p, 2),
+            "low": round(low_p, 4) if low_p < 100 else round(low_p, 2),
             "volume": int(vol_hand * 100),
             "amount": round(amount_yuan, 2),
             "turnoverRate": round(turnover, 2) if turnover else 0.0,
             "amplitude": round(amplitude, 2) if amplitude else 0.0,
-            "change": round(change, 2),
+            "change": round(change, 4) if abs(change) < 10 else round(change, 2),
             "changePct": round(change_pct, 2),
             "pe": round(pe, 2) if pe is not None else None,
             "pb": round(pb, 2) if pb is not None else None,
