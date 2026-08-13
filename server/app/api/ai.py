@@ -67,35 +67,62 @@ def _build_system_prompt(
         if code_match:
             target_code_or_name = code_match.group(0)
         else:
-            # 清理常见非股票助词，智能解析提问中的股票名称（如 "新和成", "伊利股份", "招商银行"）
-            cleaned_query = re.sub(r'(帮我|解读|分析|财报|股票|持仓|排雷|体检|最新|评估|建议|情况|怎么样|好不好)', '', user_query).strip()
-            if cleaned_query:
-                resolved = AKShareClient.resolve_symbol(cleaned_query[:8])
-                if resolved and resolved.isdigit():
-                    target_code_or_name = resolved
+            # 采用 N-gram 规则从自然语言句子中高精度扫描股票名称（如 "新和成", "伊利股份", "招商银行"）
+            chinese_text = "".join(re.findall(r"[\u4e00-\u9fa5]+", user_query))
+            STOP_WORDS = {"今天", "为什么", "分析", "一下", "怎么", "跌了", "涨了", "帮忙", "解读", "排雷", "表现", "请问", "最近", "怎么回事", "好不好", "多少", "左右", "个点"}
+            for length in [4, 3, 2]:
+                for i in range(len(chinese_text) - length + 1):
+                    sub = chinese_text[i : i + length]
+                    if sub in STOP_WORDS:
+                        continue
+                    code = AKShareClient.resolve_symbol(sub)
+                    if code and code.isdigit() and len(code) == 6:
+                        target_code_or_name = code
+                        break
+                if target_code_or_name:
+                    break
 
         if target_code_or_name:
             try:
+                # 1. 提取单股盘中/收盘实时行情
+                q = AKShareClient.get_realtime_quote(target_code_or_name)
+                quote_str = ""
+                if q:
+                    quote_str = (
+                        f"最新价: ¥{q['price']} | 今日涨跌幅: {q['changePct']}% ({'+' if q['change'] > 0 else ''}{q['change']}元) | "
+                        f"今开: ¥{q['open']} | 昨收: ¥{q['prevClose']} | 最高: ¥{q['high']} | 最低: ¥{q['low']}"
+                    )
+
+                # 2. 提取个股最新 5 条新闻与公告资讯
+                news_items = AKShareClient.get_stock_news(target_code_or_name)
+                news_str = "\n".join([f"  * [{n['time']}] {n['title']}" for n in news_items]) if news_items else "  * 暂无最新新闻暴雷或分红公告"
+
+                # 3. 提取财报排雷与杜邦分析
                 fin = AKShareClient.get_financial_analysis_report(target_code_or_name)
-                if fin and fin.get("name"):
-                    dupont = fin.get("dupont", {})
-                    health = fin.get("healthScan", {})
-                    preview = fin.get("earningsPreview", {})
-                    health_items = "\n".join([
-                        f"  * {h['name']}: {h['status']} ({h['valueStr']}) - {h['detail']}"
-                        for h in health.get("items", [])
-                    ])
+                fin_name = fin.get("name") or (q.get("name") if q else target_code_or_name)
+                fin_code = fin.get("code") or (q.get("code") if q else target_code_or_name)
 
-                    fin_context_str = f"""
+                dupont = fin.get("dupont", {})
+                health = fin.get("healthScan", {})
+                preview = fin.get("earningsPreview", {})
+                health_items = "\n".join([
+                    f"  * {h['name']}: {h['status']} ({h['valueStr']}) - {h['detail']}"
+                    for h in health.get("items", [])
+                ])
 
-[系统权威财报与排雷诊断数据 (死锁注入，绝对不可胡乱篡改)]:
-- 目标股票: {fin.get('name')} ({fin.get('code')})
+                fin_context_str = f"""
+
+[系统权威【{fin_name} ({fin_code})】盘中实时行情、最新新闻资讯与财报数据 (死锁注入)]:
+- 目标股票: {fin_name} ({fin_code})
+- 盘中实时行情死锁: {quote_str if quote_str else '市场收盘状态'}
 - 杜邦拆解分析: ROE {dupont.get('roe')}%, 商业模式: {dupont.get('businessTypeLabel')} - {dupont.get('description')}
 - 4大财报健康度排雷体检:
 {health_items}
+- 最新市场新闻与公告资讯:
+{news_str}
 - 业绩前瞻与一致预估: {preview.get('summary')} (分析师预期方向: {preview.get('consensus', {}).get('direction')})"""
             except Exception as e:
-                logger.error(f"提取财报失败 [{target_code_or_name}]: {e}")
+                logger.error(f"提取股票行情与新闻失败 [{target_code_or_name}]: {e}")
 
     summary_part = f"\n\n[早期对话历史摘要 (保留核心偏好，避免信息丢失)]:\n{session_summary}" if session_summary else ""
 

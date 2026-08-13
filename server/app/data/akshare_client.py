@@ -878,6 +878,23 @@ class AKShareClient:
 
         return q
 
+    @staticmethod
+    def get_stock_news(code: str) -> List[Dict[str, str]]:
+        """获取个股最新 5 条新闻与公告资讯"""
+        clean_code = AKShareClient.resolve_symbol(str(code).strip())
+        news_list = []
+        try:
+            df = ak.stock_news_em(symbol=clean_code)
+            if df is not None and not df.empty:
+                for idx, row in df.head(5).iterrows():
+                    time_str = str(row.get("发布时间", ""))
+                    title_str = str(row.get("新闻标题", ""))
+                    if title_str:
+                        news_list.append({"time": time_str, "title": title_str})
+        except Exception as e:
+            logger.warning(f"获取个股新闻失败 [{clean_code}]: {e}")
+        return news_list
+
     # ─── 单股体检报告 ───────────────────────────────────────────────────
 
     @staticmethod
