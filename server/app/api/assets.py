@@ -6,7 +6,7 @@ from fastapi import APIRouter, HTTPException, Depends
 from pydantic import BaseModel
 from app.services.auth import get_current_user
 
-from app.data.akshare_client import _batch_tencent_quote, get_otc_fund_nav
+from app.data.akshare_client import _batch_tencent_quote, get_otc_fund_nav, AKShareClient
 from app.data.storage import storage_db
 
 logger = logging.getLogger(__name__)
@@ -257,9 +257,11 @@ def quick_lookup_asset(code: str) -> Dict[str, Any]:
     """
     根据股票/基金代码自动推导类别、智能拉取真实名称与盘中现价
     """
-    c = code.strip().upper()
-    if not c:
+    raw_c = code.strip().upper()
+    if not raw_c:
         raise HTTPException(status_code=400, detail="请输入代码")
+
+    c = AKShareClient.resolve_symbol(raw_c)
 
     category = "STOCK"
     fund_type = None
