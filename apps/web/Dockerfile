@@ -2,32 +2,23 @@
 FROM node:20-alpine AS base
 RUN corepack enable pnpm
 
-# ----- Stage 2: Dependencies -----
-FROM base AS deps
-WORKDIR /app
-
-# 复制 Monorepo 项目结构与 pnpm 配置
-COPY package.json pnpm-lock.yaml pnpm-workspace.yaml turbo.json ./
-COPY apps/web/package.json ./apps/web/package.json
-COPY packages/core/package.json ./packages/core/package.json
-COPY packages/data/package.json ./packages/data/package.json
-COPY packages/ui/package.json ./packages/ui/package.json
-
-RUN pnpm install --frozen-lockfile
-
-# ----- Stage 3: Builder -----
+# ----- Stage 2: Dependencies & Builder -----
 FROM base AS builder
 WORKDIR /app
-COPY --from=deps /app/node_modules ./node_modules
-COPY . .
+
+# 复制 Monorepo 项目结构与代码
+COPY package.json pnpm-lock.yaml pnpm-workspace.yaml turbo.json ./
+COPY apps/web ./apps/web
+COPY packages ./packages
 
 ENV NEXT_TELEMETRY_DISABLED 1
 ENV INTERNAL_API_URL http://server:8000
 
-# 执行前端构建
+# 安装全量依赖并编译 Next.js 独立产物
+RUN pnpm install --frozen-lockfile
 RUN pnpm --filter @investscope/web build
 
-# ----- Stage 4: Runner -----
+# ----- Stage 3: Runner -----
 FROM base AS runner
 WORKDIR /app
 
