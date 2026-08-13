@@ -5,7 +5,7 @@ import { useConfigStore } from "@investscope/core";
 import { SegmentedTabs } from "@investscope/ui";
 
 export default function SettingsPage() {
-  const { theme, setTheme, apiBaseUrl, setApiBaseUrl } = useConfigStore();
+  const { theme, setTheme } = useConfigStore();
 
   return (
     <div className="p-6 max-w-[1000px] mx-auto">
@@ -29,17 +29,16 @@ export default function SettingsPage() {
           <div className="space-y-4">
             <div>
               <label className="block text-xs font-medium text-default-400 mb-1.5">
-                FastAPI 后端 API 地址
+                FastAPI 后端服务连接
               </label>
-              <input
-                type="text"
-                value={apiBaseUrl}
-                onChange={(e) => setApiBaseUrl(e.target.value)}
-                className="w-full max-w-md px-3.5 py-2 rounded-xl bg-default-100 text-sm border border-transparent focus:border-primary focus:outline-none"
-              />
-              <p className="text-[10px] text-default-400 mt-1">
-                数据中间层优先使用 AKShare (免费开源)，包含日线、估值、分红及宏观数据
-              </p>
+              <div className="flex items-center gap-3 p-3 rounded-xl bg-default-50 border border-divider/40 max-w-md">
+                <div className="w-2.5 h-2.5 rounded-full bg-emerald-400 animate-pulse" />
+                <div className="flex-1">
+                  <span className="text-xs font-semibold text-foreground block">自动同源反向代理 (Auto Rewrites Proxy)</span>
+                  <span className="text-[10px] text-default-400 block">请求统一走同源 /api 路由，无需手动配置服务器 IP</span>
+                </div>
+                <span className="text-[10px] px-2 py-0.5 rounded-full bg-emerald-500/15 text-emerald-400 font-medium">运行中</span>
+              </div>
             </div>
 
             <div className="pt-3 border-t border-divider">

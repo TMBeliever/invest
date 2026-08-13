@@ -29,7 +29,8 @@ services:
     ports:
       - "3006:3000"
     environment:
-      - NEXT_PUBLIC_API_URL=http://localhost:8006
+      # 容器间内部通信地址，无需写死宿主机公网 IP 或 localhost
+      - INTERNAL_API_URL=http://server:8000
       - TZ=Asia/Shanghai
     depends_on:
       - server

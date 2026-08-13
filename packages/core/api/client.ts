@@ -4,7 +4,7 @@
  * 所有 HTTP 请求统一走这里，便于添加鉴权、错误处理、日志等。
  */
 
-const DEFAULT_BASE_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
+const DEFAULT_BASE_URL = process.env.NEXT_PUBLIC_API_URL ?? "";
 
 class ApiClient {
   private baseUrl: string;
