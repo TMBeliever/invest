@@ -93,6 +93,31 @@ class StorageDB:
 
             cursor.execute("CREATE INDEX IF NOT EXISTS idx_assets_user_id ON assets(user_id)")
 
+            # AI 对话会话表与消息表
+            cursor.execute("""
+            CREATE TABLE IF NOT EXISTS chat_sessions (
+                id          TEXT PRIMARY KEY,
+                user_id     TEXT NOT NULL,
+                title       TEXT NOT NULL DEFAULT '新对话',
+                summary     TEXT,
+                created_at  TEXT NOT NULL DEFAULT (datetime('now')),
+                updated_at  TEXT NOT NULL DEFAULT (datetime('now'))
+            )
+            """)
+
+            cursor.execute("""
+            CREATE TABLE IF NOT EXISTS chat_messages (
+                id          TEXT PRIMARY KEY,
+                session_id  TEXT NOT NULL,
+                role        TEXT NOT NULL,
+                content     TEXT NOT NULL,
+                timestamp   TEXT NOT NULL DEFAULT (datetime('now'))
+            )
+            """)
+
+            cursor.execute("CREATE INDEX IF NOT EXISTS idx_chat_sessions_user_id ON chat_sessions(user_id)")
+            cursor.execute("CREATE INDEX IF NOT EXISTS idx_chat_messages_session_id ON chat_messages(session_id)")
+
             conn.commit()
 
     # ─── 资产管理 (多品类 & 按用户隔离) ───────────────────────────
@@ -292,6 +317,99 @@ class StorageDB:
             VALUES (?, ?, ?, datetime('now'))
             """, (code, data_type, json_content))
             conn.commit()
+
+    # ─── AI 对话会话持久化 ─────────────────────────────────────────
+
+    def create_chat_session(self, user_id: str, title: str = "新对话") -> str:
+        session_id = str(uuid.uuid4())
+        with self._get_conn() as conn:
+            cursor = conn.cursor()
+            cursor.execute("""
+            INSERT INTO chat_sessions (id, user_id, title, created_at, updated_at)
+            VALUES (?, ?, ?, datetime('now'), datetime('now'))
+            """, (session_id, user_id, title))
+            conn.commit()
+        return session_id
+
+    def get_user_chat_sessions(self, user_id: str) -> List[Dict[str, Any]]:
+        with self._get_conn() as conn:
+            conn.row_factory = sqlite3.Row
+            cursor = conn.cursor()
+            cursor.execute(
+                "SELECT * FROM chat_sessions WHERE user_id = ? ORDER BY updated_at DESC",
+                (user_id,)
+            )
+            rows = cursor.fetchall()
+            return [dict(row) for row in rows]
+
+    def get_chat_session(self, session_id: str, user_id: str) -> Optional[Dict[str, Any]]:
+        with self._get_conn() as conn:
+            conn.row_factory = sqlite3.Row
+            cursor = conn.cursor()
+            cursor.execute(
+                "SELECT * FROM chat_sessions WHERE id = ? AND user_id = ?",
+                (session_id, user_id)
+            )
+            row = cursor.fetchone()
+            return dict(row) if row else None
+
+    def update_chat_session(
+        self, session_id: str, title: Optional[str] = None, summary: Optional[str] = None
+    ):
+        with self._get_conn() as conn:
+            cursor = conn.cursor()
+            if title and summary:
+                cursor.execute(
+                    "UPDATE chat_sessions SET title = ?, summary = ?, updated_at = datetime('now') WHERE id = ?",
+                    (title, summary, session_id)
+                )
+            elif title:
+                cursor.execute(
+                    "UPDATE chat_sessions SET title = ?, updated_at = datetime('now') WHERE id = ?",
+                    (title, session_id)
+                )
+            elif summary:
+                cursor.execute(
+                    "UPDATE chat_sessions SET summary = ?, updated_at = datetime('now') WHERE id = ?",
+                    (summary, session_id)
+                )
+            else:
+                cursor.execute(
+                    "UPDATE chat_sessions SET updated_at = datetime('now') WHERE id = ?",
+                    (session_id,)
+                )
+            conn.commit()
+
+    def delete_chat_session(self, session_id: str, user_id: str) -> bool:
+        with self._get_conn() as conn:
+            cursor = conn.cursor()
+            cursor.execute("DELETE FROM chat_messages WHERE session_id = ?", (session_id,))
+            cursor.execute("DELETE FROM chat_sessions WHERE id = ? AND user_id = ?", (session_id, user_id))
+            conn.commit()
+            return cursor.rowcount > 0
+
+    def get_session_messages(self, session_id: str) -> List[Dict[str, Any]]:
+        with self._get_conn() as conn:
+            conn.row_factory = sqlite3.Row
+            cursor = conn.cursor()
+            cursor.execute(
+                "SELECT * FROM chat_messages WHERE session_id = ? ORDER BY timestamp ASC",
+                (session_id,)
+            )
+            rows = cursor.fetchall()
+            return [dict(row) for row in rows]
+
+    def add_chat_message(self, session_id: str, role: str, content: str) -> str:
+        msg_id = str(uuid.uuid4())
+        with self._get_conn() as conn:
+            cursor = conn.cursor()
+            cursor.execute("""
+            INSERT INTO chat_messages (id, session_id, role, content, timestamp)
+            VALUES (?, ?, ?, ?, datetime('now'))
+            """, (msg_id, session_id, role, content))
+            cursor.execute("UPDATE chat_sessions SET updated_at = datetime('now') WHERE id = ?", (session_id,))
+            conn.commit()
+        return msg_id
 
 storage_db = StorageDB()
 

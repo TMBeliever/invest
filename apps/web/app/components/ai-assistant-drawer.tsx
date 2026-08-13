@@ -13,12 +13,24 @@ import {
   Check,
   Minimize2,
   Maximize2,
+  History,
+  Plus,
+  MessageSquare,
+  GripHorizontal,
 } from "lucide-react";
 
 interface Message {
   id: string;
   role: "user" | "assistant";
   content: string;
+}
+
+interface ChatSession {
+  id: string;
+  title: string;
+  summary?: string;
+  created_at: string;
+  updated_at: string;
 }
 
 const QUICK_PROMPTS = [
@@ -102,14 +114,12 @@ function FormattedMarkdown({ content }: { content: string }) {
     const line = lines[index];
     const trimmed = line.trim();
 
-    // Markdown 表格
     if (trimmed.startsWith("|") && trimmed.endsWith("|")) {
       const cells = trimmed
         .split("|")
         .slice(1, -1)
         .map((c) => c.trim());
 
-      // 滤除列分隔符如 | :--- | :--- |
       if (cells.every((c) => /^:?-+:?$/.test(c))) {
         continue;
       }
@@ -205,10 +215,31 @@ function FormattedMarkdown({ content }: { content: string }) {
 export function AIAssistantDrawer() {
   const [isOpen, setIsOpen] = useState(false);
   const [isMinimized, setIsMinimized] = useState(false);
+  const [showHistory, setShowHistory] = useState(false);
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(false);
   const [copiedId, setCopiedId] = useState<string | null>(null);
 
+  // 窗口尺寸与定位 (拖拽 + 8方向拉伸)
+  const [size, setSize] = useState({ width: 440, height: 640 });
+  const [position, setPosition] = useState({ x: 0, y: 0 });
+  const [isDragging, setIsDragging] = useState(false);
+  const [isResizing, setIsResizing] = useState(false);
+
+  const dragStartRef = useRef<{ x: number; y: number } | null>(null);
+  const resizeRef = useRef<{
+    dir: string;
+    startX: number;
+    startY: number;
+    startW: number;
+    startH: number;
+    startPosX: number;
+    startPosY: number;
+  } | null>(null);
+
+  // 会话与消息状态
+  const [sessions, setSessions] = useState<ChatSession[]>([]);
+  const [currentSessionId, setCurrentSessionId] = useState<string | null>(null);
   const [messages, setMessages] = useState<Message[]>([
     {
       id: "welcome",
@@ -224,11 +255,188 @@ export function AIAssistantDrawer() {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   };
 
+  // 加载会话列表
+  const fetchSessions = async () => {
+    try {
+      const token = useAuthStore.getState().token;
+      if (!token) return;
+      const res = await fetch(`${API_BASE}/api/ai/sessions`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setSessions(data);
+      }
+    } catch {
+      // ignore
+    }
+  };
+
+  // 切换会话
+  const loadSession = async (sessionId: string) => {
+    setLoading(true);
+    setCurrentSessionId(sessionId);
+    setShowHistory(false);
+    try {
+      const token = useAuthStore.getState().token;
+      const res = await fetch(`${API_BASE}/api/ai/sessions/${sessionId}/messages`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (res.ok) {
+        const dbMsgs = await res.json();
+        setMessages(
+          dbMsgs.map((m: any) => ({
+            id: m.id,
+            role: m.role,
+            content: m.content,
+          }))
+        );
+      }
+    } catch {
+      // ignore
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // 创建新会话
+  const handleNewSession = async () => {
+    try {
+      const token = useAuthStore.getState().token;
+      const res = await fetch(`${API_BASE}/api/ai/sessions`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({ title: "新对话" }),
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setCurrentSessionId(data.sessionId);
+        setMessages([
+          {
+            id: "welcome",
+            role: "assistant",
+            content: "✨ 已开启全新对话！随时向我提问。",
+          },
+        ]);
+        fetchSessions();
+      }
+    } catch {
+      // ignore
+    }
+  };
+
+  // 删除会话
+  const handleDeleteSession = async (sessionId: string, e: React.MouseEvent) => {
+    e.stopPropagation();
+    try {
+      const token = useAuthStore.getState().token;
+      await fetch(`${API_BASE}/api/ai/sessions/${sessionId}`, {
+        method: "DELETE",
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (currentSessionId === sessionId) {
+        setCurrentSessionId(null);
+        setMessages([]);
+      }
+      fetchSessions();
+    } catch {
+      // ignore
+    }
+  };
+
   useEffect(() => {
-    if (isOpen && !isMinimized) {
+    if (isOpen) {
+      fetchSessions();
+    }
+  }, [isOpen]);
+
+  useEffect(() => {
+    if (isOpen && !isMinimized && !showHistory) {
       scrollToBottom();
     }
-  }, [messages, isOpen, isMinimized]);
+  }, [messages, isOpen, isMinimized, showHistory]);
+
+  // 拖拽与 8 方向拉伸处理
+  useEffect(() => {
+    const handleMouseMove = (e: MouseEvent) => {
+      if (isDragging && dragStartRef.current) {
+        setPosition({
+          x: e.clientX - dragStartRef.current.x,
+          y: e.clientY - dragStartRef.current.y,
+        });
+      }
+      if (isResizing && resizeRef.current) {
+        const { dir, startX, startY, startW, startH, startPosX, startPosY } = resizeRef.current;
+        const dx = e.clientX - startX;
+        const dy = e.clientY - startY;
+
+        let newW = startW;
+        let newH = startH;
+        let newX = startPosX;
+        let newY = startPosY;
+
+        if (dir.includes("e")) newW = Math.max(360, startW + dx);
+        if (dir.includes("w")) {
+          const potentialW = startW - dx;
+          if (potentialW >= 360) {
+            newW = potentialW;
+            newX = startPosX + dx;
+          }
+        }
+        if (dir.includes("s")) newH = Math.max(420, startH + dy);
+        if (dir.includes("n")) {
+          const potentialH = startH - dy;
+          if (potentialH >= 420) {
+            newH = potentialH;
+            newY = startPosY + dy;
+          }
+        }
+
+        setSize({ width: newW, height: newH });
+        setPosition({ x: newX, y: newY });
+      }
+    };
+
+    const handleMouseUp = () => {
+      setIsDragging(false);
+      setIsResizing(false);
+    };
+
+    if (isDragging || isResizing) {
+      window.addEventListener("mousemove", handleMouseMove);
+      window.addEventListener("mouseup", handleMouseUp);
+    }
+    return () => {
+      window.removeEventListener("mousemove", handleMouseMove);
+      window.removeEventListener("mouseup", handleMouseUp);
+    };
+  }, [isDragging, isResizing]);
+
+  const handleHeaderMouseDown = (e: React.MouseEvent) => {
+    if ((e.target as HTMLElement).closest("button")) return;
+    setIsDragging(true);
+    dragStartRef.current = {
+      x: e.clientX - position.x,
+      y: e.clientY - position.y,
+    };
+  };
+
+  const handleResizeMouseDown = (dir: string, e: React.MouseEvent) => {
+    e.stopPropagation();
+    setIsResizing(true);
+    resizeRef.current = {
+      dir,
+      startX: e.clientX,
+      startY: e.clientY,
+      startW: size.width,
+      startH: size.height,
+      startPosX: position.x,
+      startPosY: position.y,
+    };
+  };
 
   const handleSend = async (customText?: string) => {
     const textToSend = (customText || input).trim();
@@ -253,6 +461,7 @@ export function AIAssistantDrawer() {
     try {
       const token = useAuthStore.getState().token;
       const apiPayload = {
+        sessionId: currentSessionId,
         messages: newMessages.map((m) => ({ role: m.role, content: m.content })),
       };
 
@@ -288,6 +497,9 @@ export function AIAssistantDrawer() {
               if (dataContent === "[DONE]") break;
               try {
                 const parsed = JSON.parse(dataContent);
+                if (parsed.sessionId && !currentSessionId) {
+                  setCurrentSessionId(parsed.sessionId);
+                }
                 if (parsed.content) {
                   assistantReply += parsed.content;
                   setMessages((prev) =>
@@ -299,12 +511,13 @@ export function AIAssistantDrawer() {
                   );
                 }
               } catch {
-                // Ignore chunk parse error
+                // ignore
               }
             }
           }
         }
       }
+      fetchSessions();
     } catch (e: any) {
       setMessages((prev) =>
         prev.map((msg) =>
@@ -324,16 +537,6 @@ export function AIAssistantDrawer() {
     setTimeout(() => setCopiedId(null), 2000);
   };
 
-  const handleClear = () => {
-    setMessages([
-      {
-        id: "welcome",
-        role: "assistant",
-        content: "对话已重置。您可以随时向我提问！",
-      },
-    ]);
-  };
-
   return (
     <>
       {/* 全站右下角悬浮球 */}
@@ -351,17 +554,38 @@ export function AIAssistantDrawer() {
         </button>
       )}
 
-      {/* 展开的 AI 对话抽屉 */}
+      {/* 展开的可拖拽拉伸 AI 对话抽屉 */}
       {isOpen && (
         <div
-          className={`fixed right-4 bottom-4 z-50 w-[92vw] sm:w-[420px] bg-[#121316] border border-primary/30 shadow-2xl rounded-2xl flex flex-col overflow-hidden transition-all duration-300 ${
-            isMinimized ? "h-[60px]" : "h-[620px] max-h-[85vh]"
-          }`}
+          style={{
+            transform: `translate(${position.x}px, ${position.y}px)`,
+            width: `${size.width}px`,
+            height: isMinimized ? "60px" : `${size.height}px`,
+          }}
+          className="fixed right-4 bottom-4 z-50 bg-[#121316] border border-primary/30 shadow-2xl rounded-2xl flex flex-col overflow-hidden transition-shadow duration-300 select-none"
         >
-          {/* Header */}
-          <div className="p-3.5 border-b border-white/10 flex items-center justify-between bg-[#1a1c22]">
+          {/* 8 方向拉伸 Edge Handles */}
+          {!isMinimized && (
+            <>
+              <div onMouseDown={(e) => handleResizeMouseDown("nw", e)} className="absolute top-0 left-0 w-3.5 h-3.5 cursor-nwse-resize z-20 hover:bg-primary/30 rounded-tl" />
+              <div onMouseDown={(e) => handleResizeMouseDown("ne", e)} className="absolute top-0 right-0 w-3.5 h-3.5 cursor-nesw-resize z-20 hover:bg-primary/30 rounded-tr" />
+              <div onMouseDown={(e) => handleResizeMouseDown("sw", e)} className="absolute bottom-0 left-0 w-3.5 h-3.5 cursor-nesw-resize z-20 hover:bg-primary/30 rounded-bl" />
+              <div onMouseDown={(e) => handleResizeMouseDown("se", e)} className="absolute bottom-0 right-0 w-3.5 h-3.5 cursor-nwse-resize z-20 hover:bg-primary/30 rounded-br" />
+              <div onMouseDown={(e) => handleResizeMouseDown("n", e)} className="absolute top-0 left-4 right-4 h-1.5 cursor-ns-resize z-10 hover:bg-primary/30" />
+              <div onMouseDown={(e) => handleResizeMouseDown("s", e)} className="absolute bottom-0 left-4 right-4 h-1.5 cursor-ns-resize z-10 hover:bg-primary/30" />
+              <div onMouseDown={(e) => handleResizeMouseDown("w", e)} className="absolute left-0 top-4 bottom-4 w-1.5 cursor-ew-resize z-10 hover:bg-primary/30" />
+              <div onMouseDown={(e) => handleResizeMouseDown("e", e)} className="absolute right-0 top-4 bottom-4 w-1.5 cursor-ew-resize z-10 hover:bg-primary/30" />
+            </>
+          )}
+
+          {/* Header 拖拽抓手栏 */}
+          <div
+            onMouseDown={handleHeaderMouseDown}
+            className="p-3.5 border-b border-white/10 flex items-center justify-between bg-[#1a1c22] cursor-grab active:cursor-grabbing"
+          >
             <div className="flex items-center gap-2.5">
-              <div className="p-1.5 rounded-lg bg-primary/20 text-primary">
+              <GripHorizontal className="w-4 h-4 text-default-500 opacity-60" />
+              <div className="p-1 rounded-lg bg-primary/20 text-primary">
                 <Bot className="w-4 h-4" />
               </div>
               <div>
@@ -369,29 +593,39 @@ export function AIAssistantDrawer() {
                   <span className="text-xs font-bold tracking-tight text-white">InvestScope AI 投资顾问</span>
                   <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
                 </div>
-                <span className="text-[10px] text-default-400">带入持仓上下文 · SSE 流式打字</span>
+                <span className="text-[10px] text-default-400">时间+持仓死锁 · 智能上下文压缩</span>
               </div>
             </div>
 
             <div className="flex items-center gap-1">
               <button
-                onClick={handleClear}
-                title="清空对话"
-                className="p-1 rounded-md text-default-400 hover:text-foreground hover:bg-default-100 transition-colors"
+                onClick={handleNewSession}
+                title="新建对话"
+                className="p-1.5 rounded-md text-default-400 hover:text-foreground hover:bg-white/10 transition-colors flex items-center gap-1 text-[11px]"
               >
-                <Trash2 className="w-3.5 h-3.5" />
+                <Plus className="w-3.5 h-3.5 text-primary" />
+                <span className="hidden sm:inline">新对话</span>
+              </button>
+              <button
+                onClick={() => setShowHistory(!showHistory)}
+                title="历史对话"
+                className={`p-1.5 rounded-md transition-colors ${
+                  showHistory ? "bg-primary/20 text-primary" : "text-default-400 hover:text-foreground hover:bg-white/10"
+                }`}
+              >
+                <History className="w-3.5 h-3.5" />
               </button>
               <button
                 onClick={() => setIsMinimized(!isMinimized)}
                 title={isMinimized ? "展开窗口" : "最小化"}
-                className="p-1 rounded-md text-default-400 hover:text-foreground hover:bg-default-100 transition-colors"
+                className="p-1 rounded-md text-default-400 hover:text-foreground hover:bg-white/10 transition-colors"
               >
                 {isMinimized ? <Maximize2 className="w-3.5 h-3.5" /> : <Minimize2 className="w-3.5 h-3.5" />}
               </button>
               <button
                 onClick={() => setIsOpen(false)}
                 title="关闭"
-                className="p-1 rounded-md text-default-400 hover:text-foreground hover:bg-default-100 transition-colors"
+                className="p-1 rounded-md text-default-400 hover:text-foreground hover:bg-white/10 transition-colors"
               >
                 <X className="w-4 h-4" />
               </button>
@@ -400,111 +634,154 @@ export function AIAssistantDrawer() {
 
           {!isMinimized && (
             <>
-              {/* Message List */}
-              <div className="flex-1 p-4 overflow-y-auto space-y-3.5 text-xs bg-[#121316]">
-                {messages.map((msg, idx) => {
-                  const isUser = msg.role === "user";
-                  const isLastAssistant = !isUser && idx === messages.length - 1;
-
-                  return (
-                    <div
-                      key={msg.id}
-                      className={`flex gap-2.5 ${isUser ? "justify-end" : "justify-start"}`}
-                    >
-                      {!isUser && (
-                        <div className="w-6 h-6 rounded-full bg-primary/20 text-primary flex items-center justify-center shrink-0 mt-0.5">
-                          <Bot className="w-3.5 h-3.5" />
-                        </div>
-                      )}
-
-                      <div className="group relative max-w-[85%]">
-                        <div
-                          className={`p-3 rounded-2xl leading-relaxed ${
-                            isUser
-                              ? "bg-primary text-primary-foreground rounded-tr-xs shadow-md whitespace-pre-wrap"
-                              : "bg-[#1c1e24] text-gray-100 border border-white/10 rounded-tl-xs shadow-md"
-                          }`}
-                        >
-                          {isUser ? (
-                            msg.content
-                          ) : (
-                            <FormattedMarkdown content={msg.content} />
-                          )}
-                          {isLastAssistant && loading && (
-                            <span className="inline-block w-1.5 h-3.5 ml-1 bg-emerald-400 animate-pulse align-middle" />
-                          )}
-                        </div>
-
-                        {!isUser && msg.content && (
-                          <div className="opacity-0 group-hover:opacity-100 transition-opacity absolute -bottom-5 left-1 flex items-center gap-1 text-[10px] text-default-400">
-                            <button
-                              onClick={() => handleCopy(msg.id, msg.content)}
-                              className="hover:text-primary transition-colors flex items-center gap-0.5"
-                            >
-                              {copiedId === msg.id ? <Check className="w-3 h-3 text-emerald-400" /> : <Copy className="w-3 h-3" />}
-                              {copiedId === msg.id ? "已复制" : "复制"}
-                            </button>
-                          </div>
-                        )}
-                      </div>
-
-                      {isUser && (
-                        <div className="w-6 h-6 rounded-full bg-default-200 text-default-600 flex items-center justify-center shrink-0 mt-0.5 text-[10px] font-bold">
-                          ME
-                        </div>
-                      )}
-                    </div>
-                  );
-                })}
-
-                <div ref={messagesEndRef} />
-              </div>
-
-              {/* Quick Prompts */}
-              {messages.length <= 2 && (
-                <div className="px-3 py-2 border-t border-white/10 bg-[#16181e]">
-                  <div className="text-[10px] text-default-400 mb-1.5 font-medium">推荐快捷提问:</div>
-                  <div className="flex flex-wrap gap-1">
-                    {QUICK_PROMPTS.map((qp, i) => (
-                      <button
-                        key={i}
-                        onClick={() => handleSend(qp)}
-                        disabled={loading}
-                        className="text-[10px] px-2 py-1 rounded-lg bg-[#20222a] hover:bg-primary/20 hover:text-primary border border-white/10 text-gray-300 transition-all text-left"
-                      >
-                        {qp}
-                      </button>
-                    ))}
+              {/* 历史对话列表侧栏视图 */}
+              {showHistory ? (
+                <div className="flex-1 p-3 overflow-y-auto bg-[#141519] space-y-2 text-xs">
+                  <div className="flex items-center justify-between pb-2 border-b border-white/10 text-default-400 text-[11px]">
+                    <span>📜 历史对话记录 ({sessions.length})</span>
+                    <button onClick={handleNewSession} className="text-primary hover:underline flex items-center gap-1 font-medium">
+                      <Plus className="w-3 h-3" /> 新建对话
+                    </button>
                   </div>
+                  {sessions.length === 0 ? (
+                    <div className="p-8 text-center text-default-500 text-xs">暂无历史对话记录</div>
+                  ) : (
+                    sessions.map((s) => (
+                      <div
+                        key={s.id}
+                        onClick={() => loadSession(s.id)}
+                        className={`p-2.5 rounded-xl border transition-all cursor-pointer flex items-center justify-between group ${
+                          currentSessionId === s.id
+                            ? "bg-primary/15 border-primary/40 text-primary font-medium"
+                            : "bg-[#1c1e24] border-white/5 text-gray-300 hover:bg-white/10"
+                        }`}
+                      >
+                        <div className="flex items-center gap-2 min-w-0 pr-2">
+                          <MessageSquare className="w-3.5 h-3.5 shrink-0 opacity-70" />
+                          <span className="truncate text-xs">{s.title || "新对话"}</span>
+                        </div>
+                        <div className="flex items-center gap-2 shrink-0">
+                          <span className="text-[10px] text-default-500">{s.updated_at?.slice(5, 16)}</span>
+                          <button
+                            onClick={(e) => handleDeleteSession(s.id, e)}
+                            className="opacity-0 group-hover:opacity-100 p-1 hover:text-rose-400 transition-opacity"
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </button>
+                        </div>
+                      </div>
+                    ))
+                  )}
                 </div>
-              )}
+              ) : (
+                <>
+                  {/* 消息列表视图 */}
+                  <div className="flex-1 p-4 overflow-y-auto space-y-3.5 text-xs bg-[#121316]">
+                    {messages.map((msg, idx) => {
+                      const isUser = msg.role === "user";
+                      const isLastAssistant = !isUser && idx === messages.length - 1;
 
-              {/* Input Area */}
-              <div className="p-3 border-t border-white/10 bg-[#141519]">
-                <form
-                  onSubmit={(e) => {
-                    e.preventDefault();
-                    handleSend();
-                  }}
-                  className="flex items-center gap-2"
-                >
-                  <input
-                    type="text"
-                    value={input}
-                    onChange={(e) => setInput(e.target.value)}
-                    placeholder="问问 AI：诊断我的持仓 / 资金调仓建议..."
-                    disabled={loading}
-                    className="flex-1 px-3 py-2 rounded-xl bg-[#202229] text-xs text-white placeholder:text-gray-400 border border-white/10 focus:border-primary focus:outline-none"
-                  />
-                  <button
-                    type="submit"
-                    disabled={!input.trim() || loading}
-                    className="p-2 rounded-xl bg-primary text-primary-foreground disabled:opacity-40 hover:scale-105 transition-all shrink-0"
-                  >
-                    {loading ? <RefreshCw className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}
-                  </button>
-                </form>
-              </div>
+                      return (
+                        <div
+                          key={msg.id}
+                          className={`flex gap-2.5 ${isUser ? "justify-end" : "justify-start"}`}
+                        >
+                          {!isUser && (
+                            <div className="w-6 h-6 rounded-full bg-primary/20 text-primary flex items-center justify-center shrink-0 mt-0.5">
+                              <Bot className="w-3.5 h-3.5" />
+                            </div>
+                          )}
+
+                          <div className="group relative max-w-[85%]">
+                            <div
+                              className={`p-3 rounded-2xl leading-relaxed ${
+                                isUser
+                                  ? "bg-primary text-primary-foreground rounded-tr-xs shadow-md whitespace-pre-wrap"
+                                  : "bg-[#1c1e24] text-gray-100 border border-white/10 rounded-tl-xs shadow-md"
+                              }`}
+                            >
+                              {isUser ? (
+                                msg.content
+                              ) : (
+                                <FormattedMarkdown content={msg.content} />
+                              )}
+                              {isLastAssistant && loading && (
+                                <span className="inline-block w-1.5 h-3.5 ml-1 bg-emerald-400 animate-pulse align-middle" />
+                              )}
+                            </div>
+
+                            {!isUser && msg.content && (
+                              <div className="opacity-0 group-hover:opacity-100 transition-opacity absolute -bottom-5 left-1 flex items-center gap-1 text-[10px] text-default-400">
+                                <button
+                                  onClick={() => handleCopy(msg.id, msg.content)}
+                                  className="hover:text-primary transition-colors flex items-center gap-0.5"
+                                >
+                                  {copiedId === msg.id ? <Check className="w-3 h-3 text-emerald-400" /> : <Copy className="w-3 h-3" />}
+                                  {copiedId === msg.id ? "已复制" : "复制"}
+                                </button>
+                              </div>
+                            )}
+                          </div>
+
+                          {isUser && (
+                            <div className="w-6 h-6 rounded-full bg-default-200 text-default-600 flex items-center justify-center shrink-0 mt-0.5 text-[10px] font-bold">
+                              ME
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })}
+
+                    <div ref={messagesEndRef} />
+                  </div>
+
+                  {/* 推荐快捷提问 */}
+                  {messages.length <= 2 && (
+                    <div className="px-3 py-2 border-t border-white/10 bg-[#16181e]">
+                      <div className="text-[10px] text-default-400 mb-1.5 font-medium">推荐快捷提问:</div>
+                      <div className="flex flex-wrap gap-1">
+                        {QUICK_PROMPTS.map((qp, i) => (
+                          <button
+                            key={i}
+                            onClick={() => handleSend(qp)}
+                            disabled={loading}
+                            className="text-[10px] px-2 py-1 rounded-lg bg-[#20222a] hover:bg-primary/20 hover:text-primary border border-white/10 text-gray-300 transition-all text-left"
+                          >
+                            {qp}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* 输入框区域 */}
+                  <div className="p-3 border-t border-white/10 bg-[#141519]">
+                    <form
+                      onSubmit={(e) => {
+                        e.preventDefault();
+                        handleSend();
+                      }}
+                      className="flex items-center gap-2"
+                    >
+                      <input
+                        type="text"
+                        value={input}
+                        onChange={(e) => setInput(e.target.value)}
+                        placeholder="问问 AI：诊断我的持仓 / 资金调仓建议..."
+                        disabled={loading}
+                        className="flex-1 px-3 py-2 rounded-xl bg-[#202229] text-xs text-white placeholder:text-gray-400 border border-white/10 focus:border-primary focus:outline-none"
+                      />
+                      <button
+                        type="submit"
+                        disabled={!input.trim() || loading}
+                        className="p-2 rounded-xl bg-primary text-primary-foreground disabled:opacity-40 hover:scale-105 transition-all shrink-0"
+                      >
+                        {loading ? <RefreshCw className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}
+                      </button>
+                    </form>
+                  </div>
+                </>
+              )}
             </>
           )}
         </div>
