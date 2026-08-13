@@ -41,9 +41,21 @@ os.environ.pop("https_proxy", None)
 def _tencent_symbol(code: str) -> str:
     """根据代码前缀判断交易所前缀（全量支持 A股、港股、美股及全球指数）"""
     c = code.strip()
-    if c.startswith("sh") or c.startswith("sz") or c.startswith("hk") or c.startswith("us") or c.startswith("r_") or c.startswith("."):
-        return c.lower()
     c_upper = c.upper()
+    if c_upper in [".DJI", "DJI", "US.DJI"]:
+        return "us.DJI"
+    if c_upper in [".INX", "INX", "US.INX", "SPX", ".SPX"]:
+        return "us.INX"
+    if c_upper in [".IXIC", "IXIC", "US.IXIC"]:
+        return "us.IXIC"
+    if c_upper in [".NDX", "NDX", "US.NDX", "USNDX"]:
+        return "usNDX"
+    if c_upper in ["HSI", "R_HSI"]:
+        return "r_HSI"
+    if c_upper in ["HSCEI", "R_HSCEI"]:
+        return "r_HSCEI"
+    if c.startswith("sh") or c.startswith("sz") or c.startswith("hk") or c.startswith("us") or c.startswith("r_"):
+        return c.lower()
     if c_upper in ["000922", "000300", "000001", "000905", "588000"]:
         return f"sh{c}"
     if c_upper in ["399001", "399006"]:
@@ -305,37 +317,36 @@ class AKShareClient:
         except Exception as e:
             logger.error(f"全景指数获取失败: {e}")
 
-        # 获取美股、日股、韩股全球指数行情 (新浪 API)
+        # 获取美股（道琼斯、标普500、纳斯达克、纳指100）及全球指数实时行情 (腾讯秒级 API)
         try:
-            headers = {"Referer": "https://finance.sina.com.cn"}
-            global_map = {
-                "int_dji": (".DJI", "道琼斯"),
-                "int_sp500": (".INX", "标普500"),
-                "int_nasdaq": (".IXIC", "纳斯达克"),
-                "int_nikkei": ("N225", "日经225"),
-                "b_KOSPI": ("KOSPI", "韩国KOSPI"),
+            us_url = "http://qt.gtimg.cn/q=us.DJI,us.INX,us.IXIC,usNDX"
+            us_resp = requests.get(us_url, timeout=3)
+            us_map = {
+                "us.DJI": (".DJI", "道琼斯"),
+                "us.INX": (".INX", "标普500"),
+                "us.IXIC": (".IXIC", "纳斯达克"),
+                "usNDX": (".NDX", "纳斯达克100"),
             }
-            g_url = "https://hq.sinajs.cn/list=" + ",".join(global_map.keys())
-            g_resp = requests.get(g_url, headers=headers, timeout=3)
-            if g_resp.status_code == 200:
-                for line in g_resp.text.strip().split(";\n"):
-                    if '="' in line:
-                        k_part = line.split("var hq_str_")[1].split('="')[0]
-                        val_part = line.split('="')[1].split('"')[0]
-                        if val_part and k_part in global_map:
-                            g_code, g_name = global_map[k_part]
-                            g_parts = val_part.split(",")
+            if us_resp.status_code == 200:
+                for raw_line in us_resp.text.split(";"):
+                    line = raw_line.strip()
+                    if '="' in line and "v_" in line:
+                        var_name = line.split('="')[0].replace("v_", "").replace("var ", "").strip()
+                        val_str = line.split('="')[1].split('"')[0]
+                        parts = val_str.split("~")
+                        if len(parts) > 32 and var_name in us_map:
+                            g_code, g_name = us_map[var_name]
                             indices.append({
                                 "code": g_code,
                                 "name": g_name,
-                                "price": float(g_parts[1]),
-                                "change": float(g_parts[2]),
-                                "changePct": float(g_parts[3]),
+                                "price": round(float(parts[3]), 2),
+                                "change": round(float(parts[31]), 2),
+                                "changePct": round(float(parts[32]), 2),
                                 "amount": None,
                                 "category": "GLOBAL",
                             })
         except Exception as e:
-            logger.warning(f"全球美日韩指数获取失败: {e}")
+            logger.warning(f"全球美股实时指数获取失败: {e}")
 
         sh_amt = next((x["amount"] for x in indices if x["code"] == "000001" and x.get("amount")), 0.0)
         sz_amt = next((x["amount"] for x in indices if x["code"] == "399001" and x.get("amount")), 0.0)
