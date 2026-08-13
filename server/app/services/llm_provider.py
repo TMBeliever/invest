@@ -53,7 +53,7 @@ class OpenAIProvider(BaseLLMProvider):
                 headers=headers,
                 json=payload,
                 stream=True,
-                timeout=30,
+                timeout=60,
                 proxies={"http": None, "https": None},
             )
 
