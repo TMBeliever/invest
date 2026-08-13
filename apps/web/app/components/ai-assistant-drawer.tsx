@@ -347,9 +347,12 @@ export function AIAssistantDrawer() {
     }
   };
 
+  // 当窗口第一次打开时，自动计算屏幕右下角绝对像素位置 (x, y)
   useEffect(() => {
-    if (isOpen) {
-      fetchSessions();
+    if (isOpen && position.x === 0 && position.y === 0) {
+      const initX = Math.max(16, window.innerWidth - size.width - 24);
+      const initY = Math.max(16, window.innerHeight - size.height - 24);
+      setPosition({ x: initX, y: initY });
     }
   }, [isOpen]);
 
@@ -359,15 +362,15 @@ export function AIAssistantDrawer() {
     }
   }, [messages, isOpen, isMinimized, showHistory]);
 
-  // 拖拽与 8 方向拉伸处理
+  // 拖拽与 8 方向独立拉伸处理
   useEffect(() => {
     const handleMouseMove = (e: MouseEvent) => {
       if (isDragging && dragStartRef.current) {
-        setPosition({
-          x: e.clientX - dragStartRef.current.x,
-          y: e.clientY - dragStartRef.current.y,
-        });
+        const newX = Math.max(0, Math.min(window.innerWidth - size.width, e.clientX - dragStartRef.current.x));
+        const newY = Math.max(0, Math.min(window.innerHeight - (isMinimized ? 60 : size.height), e.clientY - dragStartRef.current.y));
+        setPosition({ x: newX, y: newY });
       }
+
       if (isResizing && resizeRef.current) {
         const { dir, startX, startY, startW, startH, startPosX, startPosY } = resizeRef.current;
         const dx = e.clientX - startX;
@@ -378,21 +381,30 @@ export function AIAssistantDrawer() {
         let newX = startPosX;
         let newY = startPosY;
 
-        if (dir.includes("e")) newW = Math.max(360, startW + dx);
-        if (dir.includes("w")) {
-          const potentialW = startW - dx;
-          if (potentialW >= 360) {
-            newW = potentialW;
-            newX = startPosX + dx;
-          }
+        // 右边拉伸 (Top-Left 保持不动)
+        if (dir.includes("e")) {
+          newW = Math.max(360, Math.min(window.innerWidth - startPosX - 10, startW + dx));
         }
-        if (dir.includes("s")) newH = Math.max(420, startH + dy);
+
+        // 左边拉伸 (右边框保持不动，只改变 width 和 left)
+        if (dir.includes("w")) {
+          const maxW = startW + startPosX;
+          const potentialW = Math.max(360, Math.min(maxW, startW - dx));
+          newX = startPosX + (startW - potentialW);
+          newW = potentialW;
+        }
+
+        // 下边拉伸 (Top-Left 保持不动)
+        if (dir.includes("s")) {
+          newH = Math.max(420, Math.min(window.innerHeight - startPosY - 10, startH + dy));
+        }
+
+        // 上边拉伸 (下边框保持不动，只改变 height 和 top)
         if (dir.includes("n")) {
-          const potentialH = startH - dy;
-          if (potentialH >= 420) {
-            newH = potentialH;
-            newY = startPosY + dy;
-          }
+          const maxH = startH + startPosY;
+          const potentialH = Math.max(420, Math.min(maxH, startH - dy));
+          newY = startPosY + (startH - potentialH);
+          newH = potentialH;
         }
 
         setSize({ width: newW, height: newH });
@@ -413,7 +425,7 @@ export function AIAssistantDrawer() {
       window.removeEventListener("mousemove", handleMouseMove);
       window.removeEventListener("mouseup", handleMouseUp);
     };
-  }, [isDragging, isResizing]);
+  }, [isDragging, isResizing, size.width, size.height, isMinimized]);
 
   const handleHeaderMouseDown = (e: React.MouseEvent) => {
     if ((e.target as HTMLElement).closest("button")) return;
@@ -425,6 +437,7 @@ export function AIAssistantDrawer() {
   };
 
   const handleResizeMouseDown = (dir: string, e: React.MouseEvent) => {
+    e.preventDefault();
     e.stopPropagation();
     setIsResizing(true);
     resizeRef.current = {
@@ -558,11 +571,12 @@ export function AIAssistantDrawer() {
       {isOpen && (
         <div
           style={{
-            transform: `translate(${position.x}px, ${position.y}px)`,
+            left: `${position.x}px`,
+            top: `${position.y}px`,
             width: `${size.width}px`,
             height: isMinimized ? "60px" : `${size.height}px`,
           }}
-          className="fixed right-4 bottom-4 z-50 bg-[#121316] border border-primary/30 shadow-2xl rounded-2xl flex flex-col overflow-hidden transition-shadow duration-300 select-none"
+          className="fixed z-50 bg-[#121316] border border-primary/30 shadow-2xl rounded-2xl flex flex-col overflow-hidden transition-shadow duration-300 select-none"
         >
           {/* 8 方向拉伸 Edge Handles */}
           {!isMinimized && (
