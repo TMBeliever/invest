@@ -108,7 +108,8 @@ export default function AssetsPage() {
           name: res.name,
           category: res.category,
           fundType: res.fundType ?? f.fundType,
-          costPrice: f.costPrice ?? (res.currentPrice ? Number(res.currentPrice.toFixed(2)) : undefined),
+          // 只要代码查到新行情，强行将成本价更新为最新的现价/净值
+          costPrice: res.currentPrice ? Number(res.currentPrice.toFixed(4)) : f.costPrice,
         }));
       } else {
         setLookupInfo(null);
@@ -401,22 +402,39 @@ export default function AssetsPage() {
             <form onSubmit={handleSubmit} className="space-y-4">
               <div>
                 <label className="block text-xs font-medium text-default-400 mb-1.5">资产类型</label>
-                <div className="grid grid-cols-5 gap-1.5">
-                  {(Object.keys(CATEGORY_META) as AssetCategory[]).map((cat) => (
-                    <button
-                      key={cat}
-                      type="button"
-                      onClick={() => setForm((f) => ({ ...f, category: cat, fundType: cat === "FUND" ? (f.fundType ?? "EXCHANGE") : f.fundType }))}
-                      className={`py-2 rounded-lg text-xs font-medium transition-all ${
-                        form.category === cat
-                          ? "bg-primary/15 text-primary border border-primary/30"
-                          : "bg-default-100 text-default-500 border border-transparent hover:text-foreground"
-                      }`}
-                    >
-                      {CATEGORY_META[cat].icon}
-                      <div className="mt-0.5">{CATEGORY_META[cat].label}</div>
-                    </button>
-                  ))}
+                <div className="grid grid-cols-4 gap-2">
+                  {[
+                    { key: "DEPOSIT", label: "存款", icon: "💰" },
+                    { key: "STOCK_FUND", label: "股票/基金", icon: "📈" },
+                    { key: "WEALTH", label: "理财", icon: "🏦" },
+                    { key: "OTHER", label: "其他", icon: "📦" },
+                  ].map((opt) => {
+                    const isActive =
+                      opt.key === "STOCK_FUND"
+                        ? form.category === "STOCK" || form.category === "FUND"
+                        : form.category === opt.key;
+
+                    return (
+                      <button
+                        key={opt.key}
+                        type="button"
+                        onClick={() =>
+                          setForm((f) => ({
+                            ...f,
+                            category: opt.key === "STOCK_FUND" ? (f.category === "FUND" ? "FUND" : "STOCK") : (opt.key as AssetCategory),
+                          }))
+                        }
+                        className={`py-2 rounded-xl text-xs font-medium transition-all ${
+                          isActive
+                            ? "bg-primary/15 text-primary border border-primary/30 font-semibold shadow-sm"
+                            : "bg-default-100 text-default-500 border border-transparent hover:text-foreground"
+                        }`}
+                      >
+                        {opt.icon}
+                        <div className="mt-0.5">{opt.label}</div>
+                      </button>
+                    );
+                  })}
                 </div>
               </div>
 
