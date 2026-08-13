@@ -1,5 +1,5 @@
 import { create } from "zustand";
-import type { KlinePoint, ValuationCorridorPoint, StockSearchResult, StockQuote, IntradayTick, IndexDetail } from "@investscope/data/schemas";
+import type { KlinePoint, ValuationCorridorPoint, StockSearchResult, StockQuote, IntradayTick, IndexDetail, FinancialAnalysisReport } from "@investscope/data/schemas";
 import { apiClient } from "../api/client";
 
 export type KlinePeriod = "intraday" | "daily" | "weekly" | "monthly" | "quarterly" | "yearly";
@@ -13,22 +13,21 @@ interface StockDetailState {
   corridors: ValuationCorridorPoint[];
   intradayTicks: IntradayTick[];
   intradayPrevClose: number | null;
+  financialAnalysis: FinancialAnalysisReport | null;
   searchResults: StockSearchResult[];
   period: KlinePeriod;
   adjust: AdjustMode;
-  autoRefresh: boolean;
-  refreshInterval: number; // 毫秒 3000 | 5000 | 10000
   loading: Record<string, boolean>;
   error: Record<string, string | null>;
 
   fetchStockQuote: (code: string) => Promise<void>;
+  updateQuoteFromWs: (quote: StockQuote) => void;
   fetchIndexDetail: (code: string) => Promise<void>;
   fetchStockKline: (code: string, period?: KlinePeriod, adjust?: AdjustMode) => Promise<void>;
   fetchStockIntraday: (code: string) => Promise<void>;
+  fetchFinancialAnalysis: (code: string) => Promise<void>;
   setPeriod: (period: KlinePeriod) => void;
   setAdjust: (adjust: AdjustMode) => void;
-  toggleAutoRefresh: () => void;
-  setRefreshInterval: (ms: number) => void;
   searchStocks: (query: string) => Promise<void>;
   clearSearch: () => void;
 }
@@ -41,22 +40,47 @@ export const useStockDetailStore = create<StockDetailState>((set, get) => ({
   corridors: [],
   intradayTicks: [],
   intradayPrevClose: null,
+  financialAnalysis: null,
   searchResults: [],
   period: "daily",
   adjust: "qfq",
-  autoRefresh: true,
-  refreshInterval: 5000,
   loading: {},
   error: {},
+
+  updateQuoteFromWs: (newQuote: StockQuote) => {
+    const oldQuote = get().quote;
+    if (oldQuote && oldQuote.price === newQuote.price && oldQuote.timestamp === newQuote.timestamp) {
+      return;
+    }
+    let flash: "up" | "down" | null = null;
+    if (oldQuote && oldQuote.code === newQuote.code) {
+      if (newQuote.price > oldQuote.price) flash = "up";
+      else if (newQuote.price < oldQuote.price) flash = "down";
+    }
+
+    set({
+      quote: newQuote,
+      quoteFlash: flash,
+    });
+
+    if (flash) {
+      setTimeout(() => {
+        set({ quoteFlash: null });
+      }, 1200);
+    }
+  },
 
   fetchStockQuote: async (code: string) => {
     const key = `quote_${code}`;
     if (get().loading[key]) return;
 
-    set((s) => ({
-      loading: { ...s.loading, [key]: true },
-      error: { ...s.error, [key]: null },
-    }));
+    const isFirstLoad = !get().quote;
+    if (isFirstLoad) {
+      set((s) => ({
+        loading: { ...s.loading, [key]: true },
+        error: { ...s.error, [key]: null },
+      }));
+    }
 
     try {
       const newQuote = await apiClient.get<StockQuote>(`/api/stock/quote/${code}`);
@@ -67,11 +91,15 @@ export const useStockDetailStore = create<StockDetailState>((set, get) => ({
         else if (newQuote.price < oldQuote.price) flash = "down";
       }
 
-      set((s) => ({
-        quote: newQuote,
-        quoteFlash: flash,
-        loading: { ...s.loading, [key]: false },
-      }));
+      const hasChange = !oldQuote || oldQuote.price !== newQuote.price || oldQuote.timestamp !== newQuote.timestamp;
+
+      if (hasChange || isFirstLoad) {
+        set((s) => ({
+          quote: newQuote,
+          quoteFlash: flash,
+          loading: isFirstLoad ? { ...s.loading, [key]: false } : s.loading,
+        }));
+      }
 
       if (flash) {
         setTimeout(() => {
@@ -79,10 +107,12 @@ export const useStockDetailStore = create<StockDetailState>((set, get) => ({
         }, 1200);
       }
     } catch (err) {
-      set((s) => ({
-        loading: { ...s.loading, [key]: false },
-        error: { ...s.error, [key]: err instanceof Error ? err.message : "获取实时行情失败" },
-      }));
+      if (isFirstLoad) {
+        set((s) => ({
+          loading: { ...s.loading, [key]: false },
+          error: { ...s.error, [key]: err instanceof Error ? err.message : "获取实时行情失败" },
+        }));
+      }
     }
   },
 
@@ -151,31 +181,71 @@ export const useStockDetailStore = create<StockDetailState>((set, get) => ({
     const key = `intraday_${code}`;
     if (get().loading[key]) return;
 
-    set((s) => ({
-      loading: { ...s.loading, [key]: true },
-      error: { ...s.error, [key]: null },
-    }));
+    const isFirstLoad = get().intradayTicks.length === 0;
+    if (isFirstLoad) {
+      set((s) => ({
+        loading: { ...s.loading, [key]: true },
+        error: { ...s.error, [key]: null },
+      }));
+    }
+
     try {
       const data = await apiClient.get<{ code: string; prevClose: number | null; ticks: IntradayTick[] }>(
         `/api/stock/intraday/${code}`
       );
+      const newTicks = data.ticks || [];
+      const oldTicks = get().intradayTicks;
+
+      // 比对末端数据是否相同（如时间、价格、成交量无变化，保持数组引用稳定）
+      let hasChange = isFirstLoad || oldTicks.length !== newTicks.length;
+      if (!hasChange && oldTicks.length > 0) {
+        const lastOld = oldTicks[oldTicks.length - 1];
+        const lastNew = newTicks[newTicks.length - 1];
+        if (lastOld.time !== lastNew.time || lastOld.price !== lastNew.price || lastOld.volume !== lastNew.volume) {
+          hasChange = true;
+        }
+      }
+
       set((s) => ({
-        intradayTicks: data.ticks,
+        ...(hasChange ? { intradayTicks: newTicks } : {}),
         intradayPrevClose: data.prevClose,
+        loading: isFirstLoad ? { ...s.loading, [key]: false } : s.loading,
+      }));
+    } catch (err) {
+      if (isFirstLoad) {
+        set((s) => ({
+          loading: { ...s.loading, [key]: false },
+          error: { ...s.error, [key]: err instanceof Error ? err.message : "获取分时数据失败" },
+        }));
+      }
+    }
+  },
+
+  fetchFinancialAnalysis: async (code: string) => {
+    const key = `financial_${code}`;
+    if (get().loading[key]) return;
+
+    set((s) => ({
+      loading: { ...s.loading, [key]: true },
+      error: { ...s.error, [key]: null },
+    }));
+
+    try {
+      const data = await apiClient.get<FinancialAnalysisReport>(`/api/stock/financial/analysis/${code}`);
+      set((s) => ({
+        financialAnalysis: data,
         loading: { ...s.loading, [key]: false },
       }));
     } catch (err) {
       set((s) => ({
         loading: { ...s.loading, [key]: false },
-        error: { ...s.error, [key]: err instanceof Error ? err.message : "获取分时数据失败" },
+        error: { ...s.error, [key]: err instanceof Error ? err.message : "获取财报分析失败" },
       }));
     }
   },
 
   setPeriod: (period: KlinePeriod) => set({ period }),
   setAdjust: (adjust: AdjustMode) => set({ adjust }),
-  toggleAutoRefresh: () => set((s) => ({ autoRefresh: !s.autoRefresh })),
-  setRefreshInterval: (ms: number) => set({ refreshInterval: ms }),
 
   searchStocks: async (query: string) => {
     if (!query.trim()) {

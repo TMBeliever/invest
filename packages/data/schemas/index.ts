@@ -300,3 +300,195 @@ export const MarketSentimentSchema = z.object({
   updatedAt: z.string(),
 });
 export type MarketSentiment = z.infer<typeof MarketSentimentSchema>;
+
+// ============================================================
+// 财报深度分析与前瞻预测 Schema
+// ============================================================
+
+export const DividendCoverageSchema = z.object({
+  freeCashFlow: z.number(),           // 自由现金流 (亿元)
+  totalDividends: z.number(),         // 现金分红总额 (亿元)
+  coverageRatio: z.number(),          // 现金流覆盖率 (%)
+  payoutRatio: z.number(),            // 股利支付率 (%)
+  consecutiveYears: z.number(),       // 连续分红年数
+  status: z.enum(["HEALTHY", "WARNING", "DANGEROUS"]),
+  message: z.string(),
+  history: z.array(z.object({
+    year: z.string(),
+    dividendPerShare: z.number(),
+    payoutRatio: z.number(),
+  })),
+  dailyYieldHistory: z.array(z.object({
+    date: z.string(),
+    dividendYield: z.number(),
+    closePrice: z.number(),
+  })).optional(),
+});
+export type DividendCoverage = z.infer<typeof DividendCoverageSchema>;
+
+export const HealthScanItemSchema = z.object({
+  key: z.string(),
+  name: z.string(),
+  status: z.enum(["PASS", "WARNING", "DANGER"]),
+  valueStr: z.string(),
+  detail: z.string(),
+});
+export type HealthScanItem = z.infer<typeof HealthScanItemSchema>;
+
+export const FinancialHealthScanSchema = z.object({
+  overallStatus: z.enum(["PASS", "WARNING", "DANGER"]),
+  items: z.array(HealthScanItemSchema),
+  trends: z.array(z.object({
+    year: z.string(),
+    revenue: z.number(),          // 营业收入 (亿元)
+    netProfit: z.number(),        // 归母净利润 (亿元)
+    operatingCashFlow: z.number(),// 经营现金流 (亿元)
+  })),
+});
+export type FinancialHealthScan = z.infer<typeof FinancialHealthScanSchema>;
+
+export const DuPontBreakdownSchema = z.object({
+  roe: z.number(),
+  netProfitMargin: z.number(),    // 销售净利率 (%)
+  assetTurnover: z.number(),      // 资产周转率 (次)
+  equityMultiplier: z.number(),   // 权益乘数 (倍)
+  businessType: z.enum(["HIGH_MARGIN", "HIGH_TURNOVER", "HIGH_LEVERAGE", "BALANCED"]),
+  businessTypeLabel: z.string(),
+  description: z.string(),
+  history: z.array(z.object({
+    year: z.string(),
+    roe: z.number(),
+    netProfitMargin: z.number(),
+    assetTurnover: z.number(),
+    equityMultiplier: z.number(),
+  })),
+});
+export type DuPontBreakdown = z.infer<typeof DuPontBreakdownSchema>;
+
+export const EarningsPreviewSchema = z.object({
+  nextReportName: z.string(),         // 业绩预告类型 e.g. "2024 年报"
+  disclosureDate: z.string().nullable(), // 预计披露日期 e.g. "2025-04-18"
+  daysToDisclosure: z.number().nullable(),
+  officialNotice: z.object({
+    hasNotice: z.boolean(),
+    title: z.string().optional(),
+    netProfitRange: z.string().optional(),
+    changePctRange: z.string().optional(),
+    type: z.string().optional(),       // e.g. "预盈" | "预增" | "略增"
+  }).optional(),
+  consensus: z.object({
+    hasConsensus: z.boolean(),
+    analystCount: z.number().optional(),
+    predictedProfit: z.number().optional(), // 机构预测中位数 (亿元)
+    direction: z.enum(["UP", "DOWN", "FLAT"]).optional(),
+    changePct: z.number().optional(),
+  }).optional(),
+  runRateForecast: z.object({
+    predictedProfit: z.number(),        // Run-Rate 预估全年利润 (亿元)
+    yoyPct: z.number(),
+  }).optional(),
+  rating: z.enum(["BEAT", "IN_LINE", "MISS", "NEUTRAL"]),
+  summary: z.string(),
+});
+export type EarningsPreview = z.infer<typeof EarningsPreviewSchema>;
+
+export const FinancialAnalysisReportSchema = z.object({
+  code: z.string(),
+  name: z.string(),
+  dividendCoverage: DividendCoverageSchema,
+  healthScan: FinancialHealthScanSchema,
+  dupont: DuPontBreakdownSchema,
+  earningsPreview: EarningsPreviewSchema,
+  updatedAt: z.string(),
+});
+export type FinancialAnalysisReport = z.infer<typeof FinancialAnalysisReportSchema>;
+
+
+// ============================================================
+// 用户
+// ============================================================
+
+export const UserSchema = z.object({
+  id: z.string(),
+  username: z.string(),
+  email: z.string().nullable().optional(),
+  nickname: z.string().nullable().optional(),
+  avatarUrl: z.string().nullable().optional(),
+  createdAt: z.string().optional(),
+});
+export type User = z.infer<typeof UserSchema>;
+
+export const AuthResponseSchema = z.object({
+  accessToken: z.string(),
+  user: UserSchema,
+});
+export type AuthResponse = z.infer<typeof AuthResponseSchema>;
+
+// ============================================================
+// 多品类资产管理
+// ============================================================
+
+export const AssetCategorySchema = z.enum(["DEPOSIT", "STOCK", "FUND", "WEALTH", "OTHER"]);
+export type AssetCategory = z.infer<typeof AssetCategorySchema>;
+
+export const AssetItemSchema = z.object({
+  id: z.number(),
+  category: AssetCategorySchema,
+  name: z.string(),
+  code: z.string().nullable().optional(),
+  notes: z.string().nullable().optional(),
+
+  // 通用市值/收益字段
+  currentValue: z.number(),
+  annualIncome: z.number(),
+
+  // 存款/理财
+  amount: z.number().nullable().optional(),
+  annualRate: z.number().nullable().optional(),
+  depositType: z.enum(["DEMAND", "FIXED"]).nullable().optional(),
+  maturityDate: z.string().nullable().optional(),
+
+  // 股票/基金
+  shares: z.number().nullable().optional(),
+  costPrice: z.number().nullable().optional(),
+  currentPrice: z.number().nullable().optional(),
+  profit: z.number().nullable().optional(),
+  profitPct: z.number().nullable().optional(),
+  dividendYield: z.number().nullable().optional(),
+  dataStale: z.boolean().nullable().optional(),
+});
+export type AssetItem = z.infer<typeof AssetItemSchema>;
+
+export const AssetAllocationSchema = z.object({
+  category: AssetCategorySchema,
+  label: z.string(),
+  value: z.number(),
+  pct: z.number(),
+});
+export type AssetAllocation = z.infer<typeof AssetAllocationSchema>;
+
+export const AssetSummarySchema = z.object({
+  summary: z.object({
+    totalValue: z.number(),
+    totalProfit: z.number(),
+    totalProfitPct: z.number(),
+    estimatedAnnualIncome: z.number(),
+    assetCount: z.number(),
+  }),
+  allocation: z.array(AssetAllocationSchema),
+  assets: z.array(AssetItemSchema),
+});
+export type AssetSummary = z.infer<typeof AssetSummarySchema>;
+
+export type AssetPayload = {
+  category: AssetCategory;
+  name: string;
+  code?: string | null;
+  amount?: number | null;
+  shares?: number | null;
+  costPrice?: number | null;
+  annualRate?: number | null;
+  depositType?: "DEMAND" | "FIXED" | null;
+  maturityDate?: string | null;
+  notes?: string | null;
+};

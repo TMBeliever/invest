@@ -6,9 +6,7 @@ import {
   TrendingUp,
   TrendingDown,
   RefreshCw,
-  Play,
-  Pause,
-  Clock,
+  WifiOff,
   AlertCircle,
 } from "lucide-react";
 
@@ -52,10 +50,7 @@ interface StockQuoteCardProps {
   quote: StockQuote | null;
   loading?: boolean;
   flash?: "up" | "down" | null;
-  autoRefresh: boolean;
-  refreshInterval: number; // 毫秒 3000, 5000, 10000
-  onToggleAutoRefresh: () => void;
-  onSetRefreshInterval: (ms: number) => void;
+  wsConnected?: boolean;
   onManualRefresh: () => void;
 }
 
@@ -63,13 +58,9 @@ export function StockQuoteCard({
   quote,
   loading = false,
   flash = null,
-  autoRefresh,
-  refreshInterval,
-  onToggleAutoRefresh,
-  onSetRefreshInterval,
+  wsConnected = true,
   onManualRefresh,
 }: StockQuoteCardProps) {
-  const [secondsLeft, setSecondsLeft] = useState<number>(Math.ceil(refreshInterval / 1000));
   const [tradingStatus, setTradingStatus] = useState(isAshareTradingTime());
 
   // 实时更新交易时段状态
@@ -82,27 +73,6 @@ export function StockQuoteCard({
 
   const isMarketOpen = (quote?.isTrading ?? true) && tradingStatus.isTrading;
 
-  // 仅在开盘时间且开启自动刷新时倒计时
-  useEffect(() => {
-    if (!autoRefresh || !isMarketOpen) {
-      setSecondsLeft(Math.ceil(refreshInterval / 1000));
-      return;
-    }
-
-    const intervalSec = Math.ceil(refreshInterval / 1000);
-    setSecondsLeft(intervalSec);
-
-    const timer = setInterval(() => {
-      setSecondsLeft((prev) => {
-        if (prev <= 1) {
-          return intervalSec;
-        }
-        return prev - 1;
-      });
-    }, 1000);
-
-    return () => clearInterval(timer);
-  }, [autoRefresh, isMarketOpen, refreshInterval]);
 
   if (!quote) {
     return (
@@ -113,21 +83,29 @@ export function StockQuoteCard({
     );
   }
 
-  const isUp = quote.change > 0;
-  const isDown = quote.change < 0;
+  const priceDiff =
+    quote.change !== undefined && quote.change !== 0
+      ? quote.change
+      : quote.price && quote.prevClose
+      ? quote.price - quote.prevClose
+      : 0;
 
-  // A股颜色标准：大红代表上涨，大绿/翡翠绿代表下跌
+  const isUp = priceDiff > 0 || (quote.changePct ?? 0) > 0;
+  const isDown = priceDiff < 0 || (quote.changePct ?? 0) < 0;
+
+  // A股颜色标准：大红代表上涨 (text-rise)，大绿/翡翠绿代表下跌 (text-fall)
   const priceColorClass = isUp
-    ? "text-red-500"
+    ? "text-red-500 text-rise"
     : isDown
-    ? "text-emerald-500"
+    ? "text-emerald-500 text-fall"
     : "text-default-300";
 
   const badgeBgClass = isUp
-    ? "bg-red-500/10 text-red-500 border-red-500/20"
+    ? "bg-red-500/10 text-red-500 text-rise border-red-500/20"
     : isDown
-    ? "bg-emerald-500/10 text-emerald-500 border-emerald-500/20"
+    ? "bg-emerald-500/10 text-emerald-500 text-fall border-emerald-500/20"
     : "bg-default-100 text-default-400 border-default-200";
+
 
   const formatNumber = (num: number | null | undefined, digits = 2) => {
     if (num === null || num === undefined || isNaN(num)) return "--";
@@ -183,62 +161,15 @@ export function StockQuoteCard({
 
         {/* 右侧看盘轮询控制 */}
         <div className="flex items-center gap-3 text-xs">
-          {/* 自动刷盘按钮（开盘时有效，非开盘时提示已暂停） */}
-          <button
-            onClick={isMarketOpen ? onToggleAutoRefresh : undefined}
-            disabled={!isMarketOpen}
-            className={`
-              flex items-center gap-1.5 px-3 py-1.5 rounded-lg border font-medium transition-all duration-200
-              ${
-                !isMarketOpen
-                  ? "bg-default-100/60 border-default-200 text-default-400 opacity-75 cursor-not-allowed"
-                  : autoRefresh
-                  ? "bg-primary/10 border-primary/30 text-primary hover:bg-primary/20"
-                  : "bg-default-100 border-default-200 text-default-400 hover:text-foreground"
-              }
-            `}
-            title={isMarketOpen ? "开启/暂停开盘自动刷盘" : "非交易开盘时段已自动暂停轮询以节省开销"}
-          >
-            {!isMarketOpen ? (
-              <>
-                <Clock className="w-3.5 h-3.5 text-amber-400" /> 休市已暂停轮询
-              </>
-            ) : autoRefresh ? (
-              <>
-                <Pause className="w-3.5 h-3.5" /> 自动刷盘中 ({secondsLeft}s)
-              </>
-            ) : (
-              <>
-                <Play className="w-3.5 h-3.5" /> 暂停看盘
-              </>
-            )}
-          </button>
-
-          {/* 频率选择器 (3s / 5s / 10s) */}
-          <div className="flex bg-default-100 p-0.5 rounded-lg border border-default-200/50">
-            {[
-              { label: "3秒", ms: 3000 },
-              { label: "5秒", ms: 5000 },
-              { label: "10秒", ms: 10000 },
-            ].map(({ label, ms }) => (
-              <button
-                key={ms}
-                onClick={() => onSetRefreshInterval(ms)}
-                disabled={!isMarketOpen}
-                className={`
-                  px-2.5 py-1 rounded-md text-[11px] font-medium transition-all
-                  ${
-                    refreshInterval === ms
-                      ? "bg-background text-foreground font-semibold shadow-sm"
-                      : "text-default-400 hover:text-foreground"
-                  }
-                  ${!isMarketOpen ? "opacity-50 cursor-not-allowed" : ""}
-                `}
-              >
-                {label}
-              </button>
-            ))}
-          </div>
+          {/* WebSocket 断连提示（仅在异常时显示） */}
+          {!wsConnected && (
+            <div
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border font-medium bg-amber-500/10 border-amber-500/30 text-amber-400"
+              title="实时行情连接已断开，正在自动重连"
+            >
+              <WifiOff className="w-3.5 h-3.5" /> 实时连接已断开，重连中...
+            </div>
+          )}
 
           {/* 手动刷新按键 (随时可用) */}
           <button
@@ -317,7 +248,7 @@ export function StockQuoteCard({
       {!isMarketOpen && (
         <div className="mb-4 px-3.5 py-2 rounded-xl bg-amber-500/5 border border-amber-500/20 text-amber-400/90 text-xs flex items-center gap-2">
           <AlertCircle className="w-4 h-4 flex-shrink-0 text-amber-400" />
-          <span>A股开盘时间段（周一至周五 09:15-11:30, 13:00-15:00）将自动开启高频极速看盘轮询。当前时间处于非交易时段，系统已自动暂停后台定时轮询。您随时可以点击右上角刷新图标手动获取最新盘后收盘价格。</span>
+          <span>A股开盘时间段（周一至周五 09:15-11:30, 13:00-15:00）行情将通过实时连接自动推送。当前处于非交易时段，您随时可以点击右上角刷新图标手动获取最新盘后收盘价格。</span>
         </div>
       )}
 

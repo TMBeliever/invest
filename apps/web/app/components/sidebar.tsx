@@ -1,8 +1,9 @@
 "use client";
 
 import Link from "next/link";
-import { usePathname } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import { useTheme } from "next-themes";
+import { useAuthStore } from "@investscope/core";
 import {
   LayoutDashboard,
   Thermometer,
@@ -14,6 +15,8 @@ import {
   TrendingUp,
   ChevronLeft,
   ChevronRight,
+  LogOut,
+  UserCircle2,
 } from "lucide-react";
 import { useState, useEffect } from "react";
 
@@ -27,13 +30,21 @@ const navItems = [
 
 export function Sidebar() {
   const pathname = usePathname();
+  const router = useRouter();
   const { theme, setTheme } = useTheme();
   const [collapsed, setCollapsed] = useState(false);
   const [mounted, setMounted] = useState(false);
+  const user = useAuthStore((s) => s.user);
+  const logout = useAuthStore((s) => s.logout);
 
   useEffect(() => {
     setMounted(true);
   }, []);
+
+  const handleLogout = () => {
+    logout();
+    router.replace("/login");
+  };
 
   return (
     <aside
@@ -83,6 +94,32 @@ export function Sidebar() {
 
       {/* Footer */}
       <div className="p-3 border-t border-divider space-y-2">
+        {/* 用户信息 & 退出登录 */}
+        {user && (
+          <div
+            className={`flex items-center gap-2.5 px-3 py-2 rounded-xl ${collapsed ? "justify-center px-0" : ""}`}
+            title={user.username}
+          >
+            <div className="flex items-center justify-center w-7 h-7 rounded-full bg-default-100 text-default-500 flex-shrink-0">
+              <UserCircle2 className="w-5 h-5" />
+            </div>
+            {!collapsed && (
+              <div className="flex-1 min-w-0">
+                <p className="text-xs font-medium text-foreground truncate">
+                  {user.nickname || user.username}
+                </p>
+              </div>
+            )}
+            <button
+              onClick={handleLogout}
+              className="p-1.5 rounded-lg text-default-400 hover:text-red-400 hover:bg-red-500/10 transition-all flex-shrink-0"
+              title="退出登录"
+            >
+              <LogOut className="w-4 h-4" />
+            </button>
+          </div>
+        )}
+
         {/* Theme toggle */}
         <button
           onClick={() => setTheme(theme === "dark" ? "light" : "dark")}

@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 import { ThemeProvider } from "next-themes";
 import { Inter } from "next/font/google";
-import { Sidebar } from "./components/sidebar";
+import { AppShell } from "./components/app-shell";
 import "./globals.css";
 
 const inter = Inter({
@@ -23,12 +23,7 @@ export default function RootLayout({
     <html lang="zh-CN" suppressHydrationWarning className={inter.variable}>
       <body className="font-sans antialiased bg-background text-foreground">
         <ThemeProvider attribute="data-theme" defaultTheme="dark" enableSystem>
-          <div className="flex h-screen overflow-hidden">
-            <Sidebar />
-            <main className="flex-1 page-content">
-              {children}
-            </main>
-          </div>
+          <AppShell>{children}</AppShell>
         </ThemeProvider>
       </body>
     </html>

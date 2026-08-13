@@ -38,7 +38,16 @@ class ApiClient {
 
     if (!res.ok) {
       const errBody = await res.text().catch(() => "Unknown error");
-      throw new Error(`API ${method} ${path} failed (${res.status}): ${errBody}`);
+      let detail = errBody;
+      try {
+        const parsed = JSON.parse(errBody);
+        if (parsed && typeof parsed.detail === "string") {
+          detail = parsed.detail;
+        }
+      } catch {
+        // errBody 不是 JSON，原样使用
+      }
+      throw new Error(detail || `请求失败 (${res.status})`);
     }
 
     if (res.status === 204) return undefined as T;

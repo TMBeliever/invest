@@ -6,10 +6,11 @@ import { useRouter } from "next/navigation";
 import {
   useDividendStore,
   useStockDetailStore,
+  useQuoteWs,
   type KlinePeriod,
   type AdjustMode,
 } from "@investscope/core";
-import { KlineChart, ValuationCorridorChart, StockQuoteCard, isAshareTradingTime, IntradayChart, SegmentedTabs } from "@investscope/ui";
+import { KlineChart, ValuationCorridorChart, StockQuoteCard, isAshareTradingTime, IntradayChart, SegmentedTabs, FinancialAnalysisCard } from "@investscope/ui";
 import {
   ArrowLeft,
   Award,
@@ -38,7 +39,7 @@ const periodOptions: { key: KlinePeriod; label: string }[] = [
 const adjustOptions: { key: AdjustMode; label: string; desc: string }[] = [
   { key: "qfq", label: "前复权", desc: "保持近期股价不变，折算历史分红 (雪球/同花顺看盘标准)" },
   { key: "hfq", label: "后复权", desc: "保持上市首日股价不变，累加历年分红回报" },
-  { key: "none", label: "不复权", desc: "交易所原始实际撮合成交价" },
+  { key: "none", label: "不复权", desc: "原始真实交易价格" },
 ];
 
 const checkIsIndex = (codeStr: string) => {
@@ -72,18 +73,34 @@ export default function StockDetailPage({ params }: { params: Promise<{ code: st
     corridors,
     intradayTicks,
     intradayPrevClose,
+    financialAnalysis,
     period,
     adjust,
-    autoRefresh,
-    refreshInterval,
-    toggleAutoRefresh,
-    setRefreshInterval,
     fetchStockQuote,
+    updateQuoteFromWs,
     fetchIndexDetail,
     fetchStockKline,
     fetchStockIntraday,
+    fetchFinancialAnalysis,
     loading: klineLoading,
   } = useStockDetailStore();
+
+  // WebSocket 实时订阅池
+  const { quotes: wsQuotes, connected: wsConnected, subscribe, unsubscribe } = useQuoteWs(code ? [code] : []);
+
+  useEffect(() => {
+    if (code) {
+      subscribe([code]);
+      return () => unsubscribe([code]);
+    }
+  }, [code, subscribe, unsubscribe]);
+
+  // 当收到 WS 实时行情更新时，优雅更新组件层状态
+  useEffect(() => {
+    if (code && wsQuotes[code]) {
+      updateQuoteFromWs(wsQuotes[code]);
+    }
+  }, [code, wsQuotes, updateQuoteFromWs]);
 
   useEffect(() => {
     if (code) {
@@ -94,30 +111,24 @@ export default function StockDetailPage({ params }: { params: Promise<{ code: st
         fetchStockReport(code);
         fetchStockKline(code, "daily", "qfq");
         fetchStockQuote(code);
+        fetchFinancialAnalysis(code);
       }
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [code, isIndex]);
 
-  // 秒级看盘自动轮询（仅在 A 股开盘交易时间内生效）
+  // 分时图 Tick 低频兜底轮询（固定 5s，仅在盘中生效）
   useEffect(() => {
-    if (!code || !autoRefresh) return;
+    if (!code || period !== "intraday") return;
 
     const timer = setInterval(() => {
       if (isAshareTradingTime().isTrading) {
-        if (isIndex) {
-          fetchIndexDetail(code);
-        } else {
-          fetchStockQuote(code);
-        }
-        if (period === "intraday") {
-          fetchStockIntraday(code);
-        }
+        fetchStockIntraday(code);
       }
-    }, refreshInterval);
+    }, 5000);
 
     return () => clearInterval(timer);
-  }, [code, isIndex, autoRefresh, refreshInterval, fetchStockQuote, fetchIndexDetail, fetchStockIntraday, period]);
+  }, [code, period, fetchStockIntraday]);
 
   const handlePeriodChange = (newPeriod: KlinePeriod) => {
     fetchStockKline(code, newPeriod, adjust);
@@ -390,22 +401,23 @@ export default function StockDetailPage({ params }: { params: Promise<{ code: st
   }
 
   const stock = stockReport!;
-  const displayQuote = quote || {
+  const currentQuote = quote && quote.code === code ? quote : null;
+  const displayQuote = currentQuote || {
     code: stock.code,
     name: stock.name,
-    price: 0,
-    change: 0,
-    changePct: 0,
-    open: 0,
-    high: 0,
-    low: 0,
-    volume: 0,
-    amount: 0,
-    prevClose: 0,
-    totalMarketCap: 0,
-    pe: stock.pe,
-    pb: stock.pb,
-    dividendYield: stock.dividendYield,
+    price: (stock as any).price ?? 0,
+    change: (stock as any).change ?? 0,
+    changePct: (stock as any).changePct ?? 0,
+    open: (stock as any).open ?? (stock as any).price ?? 0,
+    high: (stock as any).high ?? (stock as any).price ?? 0,
+    low: (stock as any).low ?? (stock as any).price ?? 0,
+    volume: (stock as any).volume ?? 0,
+    amount: (stock as any).amount ?? 0,
+    prevClose: (stock as any).prevClose ?? ((stock as any).price && (stock as any).change ? (stock as any).price - (stock as any).change : 0),
+    totalMarketCap: (stock as any).totalMarketCap ?? null,
+    pe: stock.pe ?? null,
+    pb: stock.pb ?? null,
+    dividendYield: stock.dividendYield ?? null,
     isTrading: isAshareTradingTime().isTrading,
     timestamp: "最新",
   };
@@ -446,10 +458,7 @@ export default function StockDetailPage({ params }: { params: Promise<{ code: st
       <StockQuoteCard
         quote={displayQuote}
         flash={quoteFlash}
-        autoRefresh={autoRefresh}
-        refreshInterval={refreshInterval}
-        onToggleAutoRefresh={toggleAutoRefresh}
-        onSetRefreshInterval={setRefreshInterval}
+        wsConnected={wsConnected}
         onManualRefresh={() => fetchStockQuote(code)}
       />
 
@@ -507,6 +516,14 @@ export default function StockDetailPage({ params }: { params: Promise<{ code: st
           <ValuationCorridorChart data={corridors} height="400px" />
         )}
       </div>
+
+      {/* 财报深度分析与排雷卡片 (仅个股展示，指数不展示) */}
+      {!isIndex && (
+        <FinancialAnalysisCard
+          report={financialAnalysis && financialAnalysis.code === code ? financialAnalysis : null}
+          loading={klineLoading[`financial_${code}`] || !financialAnalysis || financialAnalysis.code !== code}
+        />
+      )}
 
       {/* 6 维体检卡片 */}
       <div className="glass-panel p-6 mb-6">

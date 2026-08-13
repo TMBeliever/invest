@@ -31,6 +31,7 @@ InvestScope 参考了轻量级 Monorepo 项目 `multica` 的包隔离哲学，�
                                                       ┌──────────────────────┐
                                                       │    server/           │
                                                       │ (Python FastAPI)     │
+                                                      │  + QuoteHub (WS)     │
                                                       └──────────────────────┘
 ```
 
@@ -47,7 +48,7 @@ InvestScope 参考了轻量级 Monorepo 项目 `multica` 的包隔离哲学，�
 | `packages/ui` | 原子 UI 封装、HeroUI 主题补丁、ECharts 基础图表 | **禁止引入** `@investscope/core` 或写业务 API 调用 |
 | `packages/core` | 无头业务逻辑、Zustand 全局 Store、`useFetch` Hook、ApiClient | **禁止引入** `react-dom`、`localStorage` 或 UI 样式库 |
 | `packages/data` | 数据 Schema (Zod)、数据适配器、纯前端/后端计算引擎 | **纯 JS/TS 纯函数**，禁止引入 React 或 DOM |
-| `server/` | Python FastAPI 后端，负责在线数据源（AKShare/Baostock）采集与计算 | 保持轻量高效 |
+| `server/` | Python FastAPI 后端，数据源采集、WebSocket QuoteHub 行情推送、用户认证 | 保持轻量高效 |
 
 ---
 
@@ -106,3 +107,42 @@ sequenceDiagram
         Store-->>UI: 触发 React 视图刷新
     end
 ```
+
+### 4.2 实时行情推送（WebSocket QuoteHub）
+
+```mermaid
+sequenceDiagram
+    participant FE as 前端 (useQuoteWs)
+    participant WS as WebSocket /ws/quotes
+    participant QH as QuoteHub (后端单例)
+    participant TX as 腾讯行情 HTTP
+
+    FE->>WS: 建立连接
+    FE->>WS: {action: "subscribe", codes: ["600519","000858"]}
+    WS->>QH: 注册订阅 (conn → codes)
+
+    loop 盘中每 2 秒
+        QH->>TX: _batch_tencent_quote(聚合去重后的所有 codes)
+        TX-->>QH: 批量行情数据
+        QH->>QH: Diff 对比 snapshot，提取变化
+        QH-->>WS: 推送变化部分给对应连接
+        WS-->>FE: {type: "quote_update", data: {...}}
+    end
+
+    FE->>WS: {action: "unsubscribe", codes: ["600519"]}
+    WS->>QH: 移除订阅
+```
+
+---
+
+## 5. 用户系统架构（规划中）
+
+> 详细设计见 [user-system-design.md](./user-system-design.md)
+
+用户系统采用 JWT 本地认证，数据存储复用现有 SQLite：
+
+| 模块 | 后端 | 前端 |
+|------|------|------|
+| 认证 | `users` 表 + `/api/auth/*` + JWT 中间件 | `auth-store` (zustand + persist) |
+| 自选股 | `watchlist` 表 + `/api/watchlist` | `watchlist-store` + QuoteHub 实时推送 |
+| 多组合 | `portfolios` + `portfolio_holdings` 表 | 组合选择器 + 现有组合页适配 |
