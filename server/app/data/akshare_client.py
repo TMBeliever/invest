@@ -50,10 +50,12 @@ def _tencent_symbol(code: str) -> str:
         return "us.IXIC"
     if c_upper in [".NDX", "NDX", "US.NDX", "USNDX"]:
         return "usNDX"
-    if c_upper in ["HSI", "R_HSI"]:
+    if c_upper in ["HSI", "HKHSI", "R_HSI"]:
         return "r_HSI"
-    if c_upper in ["HSCEI", "R_HSCEI"]:
-        return "r_HSCEI"
+    if c_upper in ["HSCEI", "HKHSCEI", "R_HSCEI"]:
+        return "hkHSCEI"
+    if c_upper in ["HSTECH", "HKHSTECH", "R_HSTECH"]:
+        return "hkHSTECH"
     if c.startswith("sh") or c.startswith("sz") or c.startswith("hk") or c.startswith("us") or c.startswith("r_"):
         return c.lower()
     if c_upper in ["000922", "000300", "000001", "000905", "588000"]:
