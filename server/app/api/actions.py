@@ -254,11 +254,31 @@ def execute_action(
             "message": f"已成功更新【{target['name']}】的持仓信息",
         }
 
+    elif action_type in ("CLEAR_ALL_ASSETS", "CLEAR_ASSETS", "DELETE_ALL_ASSETS", "DELETE_ALL"):
+        # 一键清空当前用户的全部持仓资产
+        count = storage_db.clear_all_assets(user_id, source=action.source or "AI_CLEAR_ALL")
+        return {
+            "status": "ok",
+            "action": "CLEAR_ALL_ASSETS",
+            "count": count,
+            "message": f"已成功清空当前账本中的全部资产（共 {count} 笔），支持在时光机中随时一键逆向恢复！",
+        }
+
     elif action_type == "DELETE_ASSET":
         # 自然语言清仓或删除资产
         asset_id = payload.get("assetId")
         code = payload.get("code")
         name = payload.get("name")
+
+        # 容错：若 AI 传递的是“全部/所有”，自动智能路由至清空
+        if str(code).upper() in ("ALL", "*", "全部") or str(name) in ("全部资产", "所有资产", "全部持仓", "全部", "ALL"):
+            count = storage_db.clear_all_assets(user_id, source=action.source or "AI_CLEAR_ALL")
+            return {
+                "status": "ok",
+                "action": "CLEAR_ALL_ASSETS",
+                "count": count,
+                "message": f"已成功清空当前账本中的全部资产（共 {count} 笔），支持在时光机中随时一键逆向恢复！",
+            }
 
         existing_assets = storage_db.get_all_assets(user_id)
         target = None

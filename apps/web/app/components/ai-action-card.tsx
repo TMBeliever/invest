@@ -500,7 +500,96 @@ export function AIActionCard({ action, onSuccess }: AIActionCardProps) {
     );
   }
 
-  // 3. 自然语言资产清仓/删除卡片 (DELETE_ASSET)
+  // 3. 自然语言一键清空全部资产卡片 (CLEAR_ALL_ASSETS)
+  if (
+    action.type === "CLEAR_ALL_ASSETS" ||
+    action.type === "CLEAR_ASSETS" ||
+    action.type === "DELETE_ALL_ASSETS" ||
+    action.type === "DELETE_ALL" ||
+    (action.type === "DELETE_ASSET" && (action.payload?.code === "ALL" || action.payload?.name === "全部资产" || action.payload?.name === "所有资产"))
+  ) {
+    const totalCount = existingAssets.length;
+    const totalValue = existingAssets.reduce((sum, a) => {
+      const v = a.currentValue || (a.shares && a.costPrice ? a.shares * a.costPrice : a.amount) || 0;
+      return sum + Number(v);
+    }, 0);
+
+    return (
+      <div className="my-3 rounded-2xl bg-[#1c0f12] border border-rose-500/60 shadow-2xl overflow-hidden text-xs text-foreground animate-scale-in">
+        <div className="px-3.5 py-2.5 bg-gradient-to-r from-rose-600/30 via-[#261015] to-[#261015] border-b border-rose-500/30 flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <div className="w-6 h-6 rounded-lg bg-rose-500/20 text-rose-400 flex items-center justify-center shrink-0">
+              <ShieldAlert className="w-4 h-4 text-rose-400 animate-pulse" />
+            </div>
+            <div>
+              <div className="font-bold text-rose-300 text-[12px] flex items-center gap-1.5">
+                <span>{action.title || "清空全部持仓资产确认"}</span>
+                <span className="text-[10px] px-1.5 py-0.2 rounded bg-rose-500/30 text-rose-200 border border-rose-500/40 font-semibold">
+                  ⚠️ 极高危操作
+                </span>
+              </div>
+              <div className="text-[10px] text-rose-300/80 mt-0.5">
+                {action.summary || `将清空当前账本中的全部资产 (共 ${totalCount} 笔标的)`}
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div className="p-3.5 bg-[#180c0f] space-y-2.5">
+          <div className="flex items-center justify-between p-2.5 rounded-xl bg-black/40 border border-rose-500/20 text-[11px]">
+            <span className="text-default-400">待清空标的总数:</span>
+            <span className="font-bold text-white font-mono">{totalCount} 笔</span>
+          </div>
+
+          {totalValue > 0 && (
+            <div className="flex items-center justify-between p-2.5 rounded-xl bg-black/40 border border-rose-500/20 text-[11px]">
+              <span className="text-default-400">待清空资产总估值:</span>
+              <span className="font-bold text-rose-400 font-mono">
+                ¥{totalValue.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+              </span>
+            </div>
+          )}
+
+          <p className="text-[11px] text-default-400 leading-relaxed">
+            确认后将彻底清空当前个人账本中的全部持仓数据。系统将在执行前自动创建全量快照，如需撤销可随时前往「时光机审计」一键逆向还原！
+          </p>
+
+          {error && (
+            <div className="p-2 rounded-lg bg-rose-500/10 border border-rose-500/20 text-rose-400 text-[10px] flex items-center gap-1">
+              <AlertCircle className="w-3 h-3 shrink-0" />
+              <span>{error}</span>
+            </div>
+          )}
+        </div>
+
+        <div className="px-3.5 py-2.5 bg-[#14080a] border-t border-rose-500/20 flex items-center justify-between">
+          <span className="text-[10px] text-default-400">
+            {executed ? "全部资产已清空" : "数据支持时光机全量回滚"}
+          </span>
+          <button
+            type="button"
+            onClick={handleExecute}
+            disabled={executing || executed}
+            className="px-4 py-1.5 rounded-xl bg-gradient-to-r from-rose-600 to-red-700 hover:from-rose-500 hover:to-red-600 text-white text-[11px] font-bold shadow-lg shadow-rose-600/30 disabled:opacity-40 transition-all flex items-center gap-1.5 cursor-pointer"
+          >
+            {executed ? (
+              <>
+                <Check className="w-3.5 h-3.5 text-emerald-300" />
+                <span>已成功清空</span>
+              </>
+            ) : (
+              <>
+                <Trash2 className="w-3.5 h-3.5" />
+                <span>{executing ? "正在清空..." : `一键确认清空全部 (${totalCount}笔)`}</span>
+              </>
+            )}
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  // 4. 自然语言资产清仓/删除卡片 (DELETE_ASSET)
   if (action.type === "DELETE_ASSET") {
     const targetAsset = existingAssets.find(
       (a: AssetItem) => (action.payload?.code && a.code === action.payload.code) ||

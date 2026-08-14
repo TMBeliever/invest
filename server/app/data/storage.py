@@ -334,6 +334,31 @@ class StorageDB:
             conn.commit()
             return cursor.rowcount > 0
 
+    def clear_all_assets(self, user_id: str, source: str = "MANUAL") -> int:
+        import json
+        with self._get_conn() as conn:
+            conn.row_factory = sqlite3.Row
+            cursor = conn.cursor()
+            
+            cursor.execute("SELECT * FROM assets WHERE user_id = ?", (user_id,))
+            rows = cursor.fetchall()
+            if not rows:
+                return 0
+            
+            all_assets = [dict(r) for r in rows]
+            before_snapshot = json.dumps(all_assets, ensure_ascii=False)
+            count = len(all_assets)
+
+            cursor.execute("DELETE FROM assets WHERE user_id = ?", (user_id,))
+            
+            cursor.execute("""
+            INSERT INTO asset_audit_logs (user_id, asset_id, action, source, description, before_data, after_data)
+            VALUES (?, NULL, 'DELETE', ?, ?, ?, NULL)
+            """, (user_id, source, f"清空全部持仓资产 (共 {count} 笔)", before_snapshot))
+
+            conn.commit()
+            return count
+
     def batch_add_assets(self, user_id: str, items: List[Dict[str, Any]], source: str = "AI_OCR", description: str = "AI 识别批量录入") -> List[int]:
         import json
         created_ids = []

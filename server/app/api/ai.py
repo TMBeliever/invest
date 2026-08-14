@@ -136,7 +136,7 @@ def _build_system_prompt(
   }}
   ```
 
-- 【场景3：自然语言清仓/删除资产 (如“把新和成从持仓移除/卖出”】:
+- 【场景3：自然语言清仓/删除单个资产 (如“把新和成从持仓移除/卖出”)】:
   示例:
   ```action:investscope
   {{
@@ -148,6 +148,18 @@ def _build_system_prompt(
       "code": "002001",
       "name": "新和成"
     }}
+  }}
+  ```
+
+- 【场景4：自然语言一键清空全部资产 (如“清空我的资产”、“删除所有持仓”、“重置账本”)】:
+  示例:
+  ```action:investscope
+  {{
+    "type": "CLEAR_ALL_ASSETS",
+    "title": "清空全部持仓资产确认",
+    "summary": "清空当前账本中的全部资产（支持在时光机随时一键还原）",
+    "dangerLevel": "high",
+    "payload": {{}}
   }}
   ```
 """
