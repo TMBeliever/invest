@@ -335,70 +335,83 @@ def get_stock_kline(
 
 
 # ─────────────────────────────────────────────
-# 全量股票搜索（新浪实时搜索，覆盖全量 A 股）
+# 全量证券智能搜索（东方财富 + 新浪全域实时引擎）
 # ─────────────────────────────────────────────
 
 @router.get("/search")
 def search_stocks(query: str = Query("", min_length=1)) -> List[Dict[str, Any]]:
     """
-    全量全球股票/指数智能搜索（新浪行情搜索接口）。
-    支持：A股、港股 (如 00700 腾讯)、美股 (如 AAPL 苹果, NVDA 英伟达, TSLA 特斯拉) 及指数。
-    可按代码、中文名、英文名、拼音缩写实时查询。
+    全量证券/基金智能搜索：
+    全面支持：A股、场内 ETF/LOF、场外公募基金、港股、美股。
+    可按代码、中文名、拼音缩写实时查询，零硬编码。
     """
     q = query.strip()
     if not q:
         return []
 
+    # 1. 优先使用东方财富全域搜索 API（覆盖 A股/ETF/场外基金/港美股）
+    try:
+        url = f"https://searchapi.eastmoney.com/api/suggest/get?input={q}&type=14"
+        resp = requests.get(url, timeout=3, headers={"User-Agent": "Mozilla/5.0"})
+        if resp.status_code == 200:
+            data = resp.json().get("QuotationCodeTable", {}).get("Data", [])
+            results = []
+            for item in data:
+                code = item.get("Code")
+                name = item.get("Name")
+                sec_type = item.get("SecurityTypeName") or "证券"
+                classify = item.get("Classify") or ""
+                if code and name:
+                    results.append({
+                        "code": code,
+                        "name": name,
+                        "market": sec_type,
+                        "classify": classify,
+                    })
+            if results:
+                return results[:25]
+    except Exception as e:
+        logger.warning(f"东财证券搜索失败 [{q}], 尝试新浪备用接口: {e}")
+
+    # 2. 新浪备用搜索
     try:
         url  = f"http://suggest3.sinajs.cn/suggest/type=11,12,31,41&key={q}&name=suggestdata"
         resp = requests.get(url, timeout=3, headers={"Referer": "https://finance.sina.com.cn"})
 
-        if resp.status_code != 200:
-            return []
+        if resp.status_code == 200 and 'suggestdata="' in resp.text:
+            raw = resp.text.split('suggestdata="')[1].rstrip('";').rstrip('"')
+            if raw and raw != "N":
+                results = []
+                for entry in raw.split(";"):
+                    parts = entry.split(",")
+                    if len(parts) < 4:
+                        continue
+                    name   = parts[0].strip()
+                    code   = parts[2].strip()
+                    symbol = parts[3].strip()
 
-        text = resp.text
-        if 'suggestdata="' not in text:
-            return []
+                    if name.startswith(("sh", "sz")) and len(parts) >= 5:
+                        name = parts[4].strip()
+                    if not name or not code:
+                        continue
 
-        raw = text.split('suggestdata="')[1].rstrip('";').rstrip('"')
-        if not raw or raw == "N":
-            return []
+                    market = "A股"
+                    if symbol.startswith("sh6") or symbol.startswith("sh5"):
+                        market = "上交所"
+                    elif symbol.startswith("sz00") or symbol.startswith("sz15") or symbol.startswith("sz30"):
+                        market = "深交所"
+                    elif symbol.startswith("hk"):
+                        market = "港股"
 
-        results = []
-        for entry in raw.split(";"):
-            parts = entry.split(",")
-            if len(parts) < 4:
-                continue
-            entry_type = parts[1].strip()
-            # type 11 = A股, type 12 = 指数; 只返回个股
-            if entry_type not in ("11",):
-                continue
-            name   = parts[0].strip()
-            code   = parts[2].strip()
-            symbol = parts[3].strip()  # sh600036 / sz000001
+                    results.append({
+                        "code": code,
+                        "name": name,
+                        "market": market,
+                    })
 
-            # 按代码搜索时 parts[0] 为 symbol（如 sh600519），中文名在 parts[4]
-            if name.startswith(("sh", "sz")) and len(parts) >= 5:
-                name = parts[4].strip()
-            if not name or not code:
-                continue
-
-            # 市场
-            if symbol.startswith("sh6"):
-                market = "上交所"
-            elif symbol.startswith("sz00") or symbol.startswith("sz30") or symbol.startswith("sz68"):
-                market = "深交所"
-            else:
-                market = "A股"
-
-            results.append({
-                "code": code,
-                "name": name,
-                "market": market,
-            })
-
-        return results[:20]  # 最多返回 20 条，避免过多
+                return results[:25]
 
     except Exception as e:
         logger.error(f"新浪股票搜索失败 [{q}]: {e}")
-        return []
+
+    return []

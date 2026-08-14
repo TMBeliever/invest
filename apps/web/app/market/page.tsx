@@ -31,20 +31,7 @@ export default function MarketPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  const indices = overview?.indices || [
-    { code: "000001", name: "上证指数", price: 3946.68, change: 12.58, changePct: 0.32, amount: 9861.22 },
-    { code: "399001", name: "深证成指", price: 14414.43, change: 154.99, changePct: 1.09, amount: 11663.01 },
-    { code: "399006", name: "创业板指", price: 3602.08, change: 52.92, changePct: 1.49, amount: 5615.0 },
-    { code: "000922", name: "中证红利", price: 5513.68, change: -17.63, changePct: -0.32, amount: 500.47 },
-    { code: "000300", name: "沪深300", price: 4690.92, change: 27.13, changePct: 0.58, amount: 5753.26 },
-    { code: "000905", name: "中证500", price: 8045.31, change: 77.77, changePct: 0.98, amount: 4088.69 },
-    { code: "588000", name: "科创50", price: 1.833, change: 0.027, changePct: 1.5, amount: 52.86 },
-    { code: ".DJI", name: "道琼斯", price: 46247.29, change: 299.97, changePct: 0.65 },
-    { code: ".INX", name: "标普500", price: 6643.70, change: 38.98, changePct: 0.59 },
-    { code: ".IXIC", name: "纳斯达克", price: 22484.07, change: 99.37, changePct: 0.44 },
-    { code: "N225", name: "日经225", price: 44946.64, change: -408.35, changePct: -0.90 },
-    { code: "KOSPI", name: "韩国KOSPI", price: 6579.04, change: 233.51, changePct: 3.68 },
-  ];
+  const indices = overview?.indices || [];
 
   const filteredIndices = indices.filter((item: any) => {
     if (activeCategory === "A_SHARE") return ["000001", "399001", "399006", "000300", "000905", "588000"].includes(item.code);
@@ -55,10 +42,10 @@ export default function MarketPage() {
     return true;
   });
 
-  const totalAmount = overview?.totalAmount ?? 21524.23;
-  const bondYield = overview?.bondYield10y ?? 1.71;
-  const avgDy = overview?.avgDividendYield ?? 5.21;
-  const riskRatio = overview?.riskPremiumRatio ?? 3.05;
+  const totalAmount = overview?.totalAmount ?? 0;
+  const bondYield = overview?.bondYield10y ?? 0;
+  const avgDy = overview?.avgDividendYield ?? 0;
+  const riskRatio = overview?.riskPremiumRatio ?? 0;
   const leaders = overview?.sectorLeaders || [];
 
   return (

@@ -248,8 +248,27 @@ function SentimentWidget() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  const score = sentiment?.fearGreedIndex ?? 0;
-  const bondYield = sentiment?.bondYield10Y ?? 0;
+  const score = sentiment?.fearGreedIndex ?? 50;
+  const bondYield = sentiment?.bondYield10Y ?? 1.71;
+
+  let desc = "中性平稳 — 结构性轮动行情，维持核心配置纪律";
+  let color = "text-yellow-400";
+  if (score <= 25) {
+    desc = "极度恐慌 — 市场悲观情绪浓厚，逆向加仓高胜率良机";
+    color = "text-red-400";
+  } else if (score <= 45) {
+    desc = "偏恐慌 — 波动释放期，加仓高股息防御资产良机";
+    color = "text-amber-400";
+  } else if (score <= 55) {
+    desc = "中性平稳 — 市场情绪均衡，维持核心分层纪律";
+    color = "text-blue-400";
+  } else if (score <= 75) {
+    desc = "偏贪婪 — 市场风险偏好提升，注意控制追高仓位";
+    color = "text-emerald-400";
+  } else {
+    desc = "极度贪婪 — 估值情绪全面亢奋，可适度止盈卫星仓位";
+    color = "text-rose-400";
+  }
 
   return (
     <div className="glass-panel p-6 animate-fade-in">
@@ -268,7 +287,7 @@ function SentimentWidget() {
           style={{ width: `${score}%` }}
         />
       </div>
-      <p className="text-xs text-amber-400 font-medium">偏恐慌 — 历史表明通常是加仓防御资产良机</p>
+      <p className={`text-xs font-medium ${color}`}>{desc}</p>
     </div>
   );
 }
