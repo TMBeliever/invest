@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
-import { useMarketStore, useDividendStore, usePortfolioStore, useAuthStore } from "@investscope/core";
+import { useMarketStore, useDividendStore, usePortfolioStore, useAuthStore, useNationalTeamStore } from "@investscope/core";
 import {
   TrendingUp,
   Thermometer,
@@ -12,6 +12,8 @@ import {
   PieChart,
   RefreshCw,
   Sparkles,
+  Landmark,
+  Zap,
 } from "lucide-react";
 
 function IndexCard({ index }: { index: { code: string; name: string; price: number; changePct: number } }) {
@@ -426,6 +428,53 @@ function OpportunityPatrolWidget() {
   );
 }
 
+function NationalTeamBannerWidget() {
+  const { overview, fetchOverview, loading } = useNationalTeamStore();
+
+  useEffect(() => {
+    fetchOverview();
+  }, [fetchOverview]);
+
+  const stance = overview?.radar?.summary;
+
+  return (
+    <div className="glass-panel p-4 animate-fade-in border border-rose-500/20 bg-gradient-to-r from-rose-950/20 via-slate-900/40 to-background flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+      <div className="flex items-center gap-3">
+        <div className="w-9 h-9 rounded-xl bg-rose-500/15 text-rose-400 flex items-center justify-center shrink-0">
+          <Landmark className="w-5 h-5" />
+        </div>
+        <div>
+          <div className="flex items-center gap-2">
+            <h4 className="text-xs font-bold text-white">🇨🇳 国家队操盘雷达</h4>
+            <span
+              className={`px-2 py-0.5 rounded-full text-[10px] font-bold font-mono ${
+                stance?.stanceLevel === "LEVEL_S_HERO"
+                  ? "bg-rose-500/20 text-rose-400 border border-rose-500/30 animate-pulse"
+                  : stance?.stanceLevel === "LEVEL_A_SUPPORT"
+                  ? "bg-amber-500/20 text-amber-300 border border-amber-500/30"
+                  : "bg-emerald-500/20 text-emerald-400 border border-emerald-500/30"
+              }`}
+            >
+              {stance?.stanceLabel || "A级 结构性买入"}
+            </span>
+          </div>
+          <p className="text-[11px] text-default-400 mt-0.5 line-clamp-1">
+            今日 12 大护盘 ETF 成交 ¥{stance?.totalRadarTurnoverYi ?? 0} 亿，预估托底资金流入 +¥{stance?.totalEstimatedDefenseInflowYi ?? 0} 亿
+          </p>
+        </div>
+      </div>
+
+      <Link
+        href="/national-team"
+        className="px-3 py-1.5 rounded-xl bg-rose-500/15 text-rose-300 hover:bg-rose-500/25 transition-all text-xs font-bold flex items-center gap-1 shrink-0 self-start sm:self-auto"
+      >
+        <span>查看操盘底牌与跟车策略</span>
+        <ArrowUpRight className="w-3.5 h-3.5" />
+      </Link>
+    </div>
+  );
+}
+
 export default function DashboardPage() {
   const { indices, fetchIndices, loading } = useMarketStore();
 
@@ -456,6 +505,9 @@ export default function DashboardPage() {
           ))}
         </div>
       )}
+
+      {/* 🇨🇳 国家队操盘雷达快速入口 */}
+      <NationalTeamBannerWidget />
 
       {/* 🎯 机会巡视雷达 (全新攻防一体核心组件) */}
       <OpportunityPatrolWidget />
