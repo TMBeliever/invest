@@ -1,16 +1,19 @@
 from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from app.api import market, dividend, portfolio, stock, ws, auth, financial, assets, ai, actions, xray
+from app.api import market, dividend, portfolio, stock, ws, auth, financial, assets, ai, actions, xray, intelligence
 from app.services.quote_hub import quote_hub
+from app.services.scheduler import scheduler_service
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    # 启动行情推送池
+    # 启动行情推送池与智能中台调度器
     await quote_hub.start()
+    await scheduler_service.start()
     yield
-    # 关闭行情推送池
+    # 关闭服务
+    await scheduler_service.stop()
     await quote_hub.stop()
 
 app = FastAPI(
@@ -38,6 +41,7 @@ app.include_router(stock.router, prefix="/api/stock", tags=["Stock"])
 app.include_router(financial.router, prefix="/api/stock/financial", tags=["Financial"])
 app.include_router(assets.router, prefix="/api/assets", tags=["Assets"])
 app.include_router(xray.router, prefix="/api/assets", tags=["X-Ray"])
+app.include_router(intelligence.router, tags=["Intelligence & Sentinel"])
 app.include_router(actions.router, prefix="/api/actions", tags=["Actions"])
 app.include_router(ai.router, prefix="/api/ai", tags=["AI Advisor"])
 app.include_router(ws.router, tags=["WebSocket"])

@@ -137,6 +137,74 @@ class StorageDB:
             """)
             cursor.execute("CREATE INDEX IF NOT EXISTS idx_asset_audit_user ON asset_audit_logs(user_id)")
 
+            # 智能研报表 (早盘前瞻 / 每日收盘 / 行业专题)
+            cursor.execute("""
+            CREATE TABLE IF NOT EXISTS intelligence_reports (
+                id TEXT PRIMARY KEY,
+                report_type TEXT NOT NULL,
+                severity TEXT NOT NULL DEFAULT 'INFO',
+                title TEXT NOT NULL,
+                summary TEXT,
+                markdown_content TEXT NOT NULL,
+                structured_metrics TEXT,
+                decision_options TEXT,
+                created_date TEXT NOT NULL,
+                created_at TEXT NOT NULL DEFAULT (datetime('now'))
+            )
+            """)
+            cursor.execute("CREATE INDEX IF NOT EXISTS idx_intel_reports_type_date ON intelligence_reports(report_type, created_date)")
+
+            # 组合智能哨兵与风险预警表 (状态机驱动)
+            cursor.execute("""
+            CREATE TABLE IF NOT EXISTS sentinel_alerts (
+                id TEXT PRIMARY KEY,
+                user_id TEXT NOT NULL,
+                rule_code TEXT NOT NULL,
+                category TEXT NOT NULL,
+                severity TEXT NOT NULL DEFAULT 'WARNING',
+                symbol TEXT,
+                symbol_name TEXT,
+                title TEXT NOT NULL,
+                summary TEXT,
+                markdown_content TEXT NOT NULL,
+                structured_metrics TEXT,
+                decision_options TEXT,
+                status TEXT NOT NULL DEFAULT 'UNREAD',
+                created_at TEXT NOT NULL DEFAULT (datetime('now')),
+                resolved_at TEXT
+            )
+            """)
+            cursor.execute("CREATE INDEX IF NOT EXISTS idx_sentinel_alerts_user ON sentinel_alerts(user_id, status)")
+
+            # 用户推送与订阅偏好配置表
+            cursor.execute("""
+            CREATE TABLE IF NOT EXISTS user_subscriptions (
+                user_id TEXT PRIMARY KEY,
+                enable_morning_radar INTEGER NOT NULL DEFAULT 1,
+                enable_closing_review INTEGER NOT NULL DEFAULT 1,
+                enable_sentinel_alert INTEGER NOT NULL DEFAULT 1,
+                channel_types TEXT NOT NULL DEFAULT '["IN_APP"]',
+                feishu_webhook_url TEXT,
+                wechat_webhook_url TEXT,
+                email_address TEXT,
+                telegram_bot_token TEXT,
+                telegram_chat_id TEXT,
+                telegram_api_host TEXT DEFAULT 'https://api.telegram.org',
+                updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+            )
+            """)
+
+            # 动态自动补全字段 (迁移)
+            for col, col_type in [
+                ("telegram_bot_token", "TEXT"),
+                ("telegram_chat_id", "TEXT"),
+                ("telegram_api_host", "TEXT DEFAULT 'https://api.telegram.org'"),
+            ]:
+                try:
+                    cursor.execute(f"ALTER TABLE user_subscriptions ADD COLUMN {col} {col_type}")
+                except Exception:
+                    pass
+
             conn.commit()
 
     # ─── 资产管理 (多品类 & 按用户隔离) ───────────────────────────
@@ -635,5 +703,275 @@ class StorageDB:
             conn.commit()
         return msg_id
 
+    # ─── 智能研报与市场情报 (早盘前瞻 / 每日收盘 / 行业专题) ────────
+
+    def save_intelligence_report(self, report_data: Dict[str, Any]) -> str:
+        import json
+        import datetime
+        rep_id = report_data.get("id") or str(uuid.uuid4())
+        created_date = report_data.get("created_date") or datetime.datetime.now().strftime("%Y-%m-%d")
+        
+        metrics_json = json.dumps(report_data.get("structured_metrics") or {}, ensure_ascii=False)
+        options_json = json.dumps(report_data.get("decision_options") or [], ensure_ascii=False)
+
+        with self._get_conn() as conn:
+            cursor = conn.cursor()
+            cursor.execute("""
+            INSERT OR REPLACE INTO intelligence_reports (
+                id, report_type, severity, title, summary, markdown_content,
+                structured_metrics, decision_options, created_date, created_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))
+            """, (
+                rep_id,
+                report_data.get("report_type"),
+                report_data.get("severity", "INFO"),
+                report_data.get("title", ""),
+                report_data.get("summary", ""),
+                report_data.get("markdown_content", ""),
+                metrics_json,
+                options_json,
+                created_date,
+            ))
+            conn.commit()
+        return rep_id
+
+    def get_latest_intelligence_report(self, report_type: str, date_str: Optional[str] = None) -> Optional[Dict[str, Any]]:
+        import json
+        with self._get_conn() as conn:
+            conn.row_factory = sqlite3.Row
+            cursor = conn.cursor()
+            if date_str:
+                cursor.execute(
+                    "SELECT * FROM intelligence_reports WHERE report_type = ? AND created_date = ? ORDER BY created_at DESC LIMIT 1",
+                    (report_type, date_str)
+                )
+            else:
+                cursor.execute(
+                    "SELECT * FROM intelligence_reports WHERE report_type = ? ORDER BY created_at DESC LIMIT 1",
+                    (report_type,)
+                )
+            row = cursor.fetchone()
+            if not row:
+                return None
+            d = dict(row)
+            try:
+                d["structured_metrics"] = json.loads(d["structured_metrics"]) if d.get("structured_metrics") else {}
+            except Exception:
+                d["structured_metrics"] = {}
+            try:
+                d["decision_options"] = json.loads(d["decision_options"]) if d.get("decision_options") else []
+            except Exception:
+                d["decision_options"] = []
+            return d
+
+    def get_intelligence_reports(self, report_type: Optional[str] = None, limit: int = 20) -> List[Dict[str, Any]]:
+        import json
+        with self._get_conn() as conn:
+            conn.row_factory = sqlite3.Row
+            cursor = conn.cursor()
+            if report_type:
+                cursor.execute(
+                    "SELECT * FROM intelligence_reports WHERE report_type = ? ORDER BY created_at DESC LIMIT ?",
+                    (report_type, limit)
+                )
+            else:
+                cursor.execute(
+                    "SELECT * FROM intelligence_reports ORDER BY created_at DESC LIMIT ?",
+                    (limit,)
+                )
+            rows = cursor.fetchall()
+            result = []
+            for r in rows:
+                d = dict(r)
+                try:
+                    d["structured_metrics"] = json.loads(d["structured_metrics"]) if d.get("structured_metrics") else {}
+                except Exception:
+                    d["structured_metrics"] = {}
+                try:
+                    d["decision_options"] = json.loads(d["decision_options"]) if d.get("decision_options") else []
+                except Exception:
+                    d["decision_options"] = []
+                result.append(d)
+            return result
+
+    # ─── 组合智能哨兵与风险预警 (状态机生命周期) ───────────────────
+
+    def save_sentinel_alert(self, alert_data: Dict[str, Any]) -> str:
+        import json
+        alert_id = alert_data.get("id") or str(uuid.uuid4())
+        metrics_json = json.dumps(alert_data.get("structured_metrics") or {}, ensure_ascii=False)
+        options_json = json.dumps(alert_data.get("decision_options") or [], ensure_ascii=False)
+
+        with self._get_conn() as conn:
+            cursor = conn.cursor()
+            # 检查是否已存在同用户、同规则、同标的且未消除的告警，若有则更新，避免重复堆叠
+            cursor.execute("""
+            SELECT id FROM sentinel_alerts 
+            WHERE user_id = ? AND rule_code = ? AND (symbol = ? OR (symbol IS NULL AND ? IS NULL)) AND status IN ('UNREAD', 'ACKNOWLEDGED')
+            """, (alert_data.get("user_id"), alert_data.get("rule_code"), alert_data.get("symbol"), alert_data.get("symbol")))
+            existing = cursor.fetchone()
+
+            if existing:
+                alert_id = existing[0]
+                cursor.execute("""
+                UPDATE sentinel_alerts SET
+                    severity = ?, title = ?, summary = ?, markdown_content = ?,
+                    structured_metrics = ?, decision_options = ?, created_at = datetime('now')
+                WHERE id = ?
+                """, (
+                    alert_data.get("severity", "WARNING"),
+                    alert_data.get("title", ""),
+                    alert_data.get("summary", ""),
+                    alert_data.get("markdown_content", ""),
+                    metrics_json,
+                    options_json,
+                    alert_id,
+                ))
+            else:
+                cursor.execute("""
+                INSERT INTO sentinel_alerts (
+                    id, user_id, rule_code, category, severity, symbol, symbol_name,
+                    title, summary, markdown_content, structured_metrics, decision_options,
+                    status, created_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'UNREAD', datetime('now'))
+                """, (
+                    alert_id,
+                    alert_data.get("user_id"),
+                    alert_data.get("rule_code"),
+                    alert_data.get("category", "RISK"),
+                    alert_data.get("severity", "WARNING"),
+                    alert_data.get("symbol"),
+                    alert_data.get("symbol_name"),
+                    alert_data.get("title", ""),
+                    alert_data.get("summary", ""),
+                    alert_data.get("markdown_content", ""),
+                    metrics_json,
+                    options_json,
+                ))
+            conn.commit()
+        return alert_id
+
+    def get_user_sentinel_alerts(self, user_id: str, status: Optional[str] = None) -> List[Dict[str, Any]]:
+        import json
+        with self._get_conn() as conn:
+            conn.row_factory = sqlite3.Row
+            cursor = conn.cursor()
+            if status:
+                cursor.execute(
+                    "SELECT * FROM sentinel_alerts WHERE user_id = ? AND status = ? ORDER BY created_at DESC",
+                    (user_id, status)
+                )
+            else:
+                cursor.execute(
+                    "SELECT * FROM sentinel_alerts WHERE user_id = ? ORDER BY created_at DESC",
+                    (user_id,)
+                )
+            rows = cursor.fetchall()
+            result = []
+            for r in rows:
+                d = dict(r)
+                try:
+                    d["structured_metrics"] = json.loads(d["structured_metrics"]) if d.get("structured_metrics") else {}
+                except Exception:
+                    d["structured_metrics"] = {}
+                try:
+                    d["decision_options"] = json.loads(d["decision_options"]) if d.get("decision_options") else []
+                except Exception:
+                    d["decision_options"] = []
+                result.append(d)
+            return result
+
+    def update_sentinel_alert_status(self, alert_id: str, user_id: str, status: str) -> bool:
+        with self._get_conn() as conn:
+            cursor = conn.cursor()
+            resolved_sql = ", resolved_at = datetime('now')" if status in ("AUTO_RESOLVED", "DISMISSED") else ""
+            cursor.execute(
+                f"UPDATE sentinel_alerts SET status = ? {resolved_sql} WHERE id = ? AND user_id = ?",
+                (status, alert_id, user_id)
+            )
+            conn.commit()
+            return cursor.rowcount > 0
+
+    def auto_resolve_sentinel_alerts(self, user_id: str, rule_code: str, symbol: Optional[str] = None) -> int:
+        with self._get_conn() as conn:
+            cursor = conn.cursor()
+            if symbol:
+                cursor.execute("""
+                UPDATE sentinel_alerts 
+                SET status = 'AUTO_RESOLVED', resolved_at = datetime('now')
+                WHERE user_id = ? AND rule_code = ? AND symbol = ? AND status IN ('UNREAD', 'ACKNOWLEDGED')
+                """, (user_id, rule_code, symbol))
+            else:
+                cursor.execute("""
+                UPDATE sentinel_alerts 
+                SET status = 'AUTO_RESOLVED', resolved_at = datetime('now')
+                WHERE user_id = ? AND rule_code = ? AND status IN ('UNREAD', 'ACKNOWLEDGED')
+                """, (user_id, rule_code))
+            conn.commit()
+            return cursor.rowcount
+
+    # ─── 用户推送与订阅偏好配置 ───────────────────────────────────
+
+    def get_user_subscription(self, user_id: str) -> Dict[str, Any]:
+        import json
+        with self._get_conn() as conn:
+            conn.row_factory = sqlite3.Row
+            cursor = conn.cursor()
+            cursor.execute("SELECT * FROM user_subscriptions WHERE user_id = ?", (user_id,))
+            row = cursor.fetchone()
+            if not row:
+                return {
+                    "user_id": user_id,
+                    "enable_morning_radar": True,
+                    "enable_closing_review": True,
+                    "enable_sentinel_alert": True,
+                    "channel_types": ["IN_APP"],
+                    "feishu_webhook_url": None,
+                    "wechat_webhook_url": None,
+                    "email_address": None,
+                    "telegram_bot_token": None,
+                    "telegram_chat_id": None,
+                    "telegram_api_host": "https://api.telegram.org",
+                }
+            d = dict(row)
+            try:
+                d["channel_types"] = json.loads(d["channel_types"]) if d.get("channel_types") else ["IN_APP"]
+            except Exception:
+                d["channel_types"] = ["IN_APP"]
+            d["enable_morning_radar"] = bool(d.get("enable_morning_radar", 1))
+            d["enable_closing_review"] = bool(d.get("enable_closing_review", 1))
+            d["enable_sentinel_alert"] = bool(d.get("enable_sentinel_alert", 1))
+            if not d.get("telegram_api_host"):
+                d["telegram_api_host"] = "https://api.telegram.org"
+            return d
+
+    def save_user_subscription(self, user_id: str, config: Dict[str, Any]) -> bool:
+        import json
+        channel_json = json.dumps(config.get("channel_types") or ["IN_APP"], ensure_ascii=False)
+        with self._get_conn() as conn:
+            cursor = conn.cursor()
+            cursor.execute("""
+            INSERT OR REPLACE INTO user_subscriptions (
+                user_id, enable_morning_radar, enable_closing_review, enable_sentinel_alert,
+                channel_types, feishu_webhook_url, wechat_webhook_url, email_address,
+                telegram_bot_token, telegram_chat_id, telegram_api_host, updated_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))
+            """, (
+                user_id,
+                1 if config.get("enable_morning_radar", True) else 0,
+                1 if config.get("enable_closing_review", True) else 0,
+                1 if config.get("enable_sentinel_alert", True) else 0,
+                channel_json,
+                config.get("feishu_webhook_url"),
+                config.get("wechat_webhook_url"),
+                config.get("email_address"),
+                config.get("telegram_bot_token"),
+                config.get("telegram_chat_id"),
+                config.get("telegram_api_host") or "https://api.telegram.org",
+            ))
+            conn.commit()
+            return True
+
 storage_db = StorageDB()
+
 

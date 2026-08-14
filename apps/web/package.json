@@ -14,8 +14,8 @@
     "@heroui/styles": "^3.0.0",
     "@investscope/core": "workspace:*",
     "@investscope/data": "workspace:*",
-    "@investscope/views": "workspace:*",
     "@investscope/ui": "workspace:*",
+    "@investscope/views": "workspace:*",
     "echarts": "^5.6.0",
     "echarts-for-react": "^3.0.2",
     "lucide-react": "^0.514.0",
@@ -23,6 +23,8 @@
     "next-themes": "^0.4.6",
     "react": "19.2.8",
     "react-dom": "19.2.8",
+    "react-markdown": "^10.1.0",
+    "remark-gfm": "^4.0.1",
     "zustand": "^5.0.5"
   },
   "devDependencies": {

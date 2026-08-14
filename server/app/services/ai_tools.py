@@ -101,6 +101,18 @@ AI_TOOLS_DEFINITIONS = [
                 "required": ["symbols"]
             }
         }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "get_active_risk_alerts",
+            "description": "获取用户当前持仓的【组合智能哨兵与四维风控预警报告】。包括隐形行业穿透超标(>28%)、股息利差收窄、现金防御安全垫击穿(<10%)、极端压力测试敏感度回撤预警，以及系统为每条风险配备的 3 套深度应对方案(方案A守成/方案B优化/方案C防守)。",
+            "parameters": {
+                "type": "object",
+                "properties": {},
+                "required": []
+            }
+        }
     }
 ]
 
@@ -115,6 +127,30 @@ def execute_portfolio_xray(user_id: str) -> Dict[str, Any]:
     except Exception as e:
         logger.error(f"执行 get_portfolio_xray 失败: {e}")
         return {"error": f"获取 X-Ray 体检数据失败: {str(e)}"}
+
+
+def execute_active_risk_alerts(user_id: str) -> Dict[str, Any]:
+    """获取用户当前持仓活跃的风险预警与 A/B/C 决策方案"""
+    try:
+        alerts = storage_db.get_user_sentinel_alerts(user_id, status=None)
+        active = [a for a in alerts if a.get("status") in ("UNREAD", "ACKNOWLEDGED")]
+        return {
+            "activeCount": len(active),
+            "alerts": [
+                {
+                    "id": a.get("id"),
+                    "severity": a.get("severity"),
+                    "title": a.get("title"),
+                    "summary": a.get("summary"),
+                    "status": a.get("status"),
+                    "decisionOptions": a.get("decision_options", []),
+                }
+                for a in active
+            ]
+        }
+    except Exception as e:
+        logger.error(f"执行 get_active_risk_alerts 失败: {e}")
+        return {"error": f"获取风险预警失败: {str(e)}"}
 
 
 def execute_portfolio_summary(user_id: str) -> Dict[str, Any]:
@@ -229,6 +265,8 @@ def dispatch_ai_tool(tool_name: str, tool_args: Dict[str, Any], user_id: Optiona
     try:
         if tool_name == "get_portfolio_xray":
             return execute_portfolio_xray(user_id or "")
+        elif tool_name == "get_active_risk_alerts":
+            return execute_active_risk_alerts(user_id or "")
         elif tool_name == "get_portfolio_summary":
             return execute_portfolio_summary(user_id or "")
         elif tool_name == "get_stock_quote":

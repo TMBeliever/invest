@@ -36,11 +36,33 @@ export function Sidebar() {
   const { theme, setTheme } = useTheme();
   const [collapsed, setCollapsed] = useState(false);
   const [mounted, setMounted] = useState(false);
+  const [activeAlertCount, setActiveAlertCount] = useState<number>(0);
   const user = useAuthStore((s) => s.user);
   const logout = useAuthStore((s) => s.logout);
 
   useEffect(() => {
     setMounted(true);
+    // 定期拉取活跃哨兵告警数量 (极速快路径)
+    const checkAlerts = async () => {
+      try {
+        if (typeof document !== "undefined" && document.hidden) return; // 页面隐藏时不轮询
+        const token = useAuthStore.getState().token;
+        if (!token) return;
+        const apiBase = process.env.NEXT_PUBLIC_API_URL || "";
+        const res = await fetch(`${apiBase}/api/intelligence/sentinel-alerts`, {
+          headers: { Authorization: `Bearer ${token}` },
+        });
+        if (res.ok) {
+          const data = await res.json();
+          setActiveAlertCount(data.total_active_alerts || 0);
+        }
+      } catch {
+        // ignore
+      }
+    };
+    checkAlerts();
+    const timer = setInterval(checkAlerts, 60000); // 60秒轻量轮询
+    return () => clearInterval(timer);
   }, []);
 
   const handleLogout = () => {
@@ -73,12 +95,15 @@ export function Sidebar() {
       <nav className="flex-1 py-4 px-3 space-y-1">
         {navItems.map(({ href, label, icon: Icon }) => {
           const isActive = href === "/" ? pathname === "/" : pathname.startsWith(href);
+          const isAssets = href === "/assets";
+          const hasAlerts = isAssets && activeAlertCount > 0;
+
           return (
             <Link
               key={href}
               href={href}
               className={`
-                flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium
+                relative flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium
                 transition-all duration-200 group
                 ${isActive
                   ? "bg-primary/10 text-primary shadow-sm"
@@ -87,8 +112,22 @@ export function Sidebar() {
                 ${collapsed ? "justify-center px-0" : ""}
               `}
             >
-              <Icon className={`w-[18px] h-[18px] flex-shrink-0 ${isActive ? "text-primary" : "text-default-400 group-hover:text-foreground"}`} />
-              {!collapsed && <span>{label}</span>}
+              <div className="relative">
+                <Icon className={`w-[18px] h-[18px] flex-shrink-0 ${isActive ? "text-primary" : "text-default-400 group-hover:text-foreground"}`} />
+                {hasAlerts && collapsed && (
+                  <span className="absolute -top-1 -right-1 w-2.5 h-2.5 bg-rose-500 rounded-full border-2 border-background animate-pulse" />
+                )}
+              </div>
+              {!collapsed && (
+                <div className="flex-1 flex items-center justify-between min-w-0">
+                  <span className="truncate">{label}</span>
+                  {hasAlerts && (
+                    <span className="ml-auto text-[10px] px-1.5 py-0.2 rounded-full bg-rose-500/20 text-rose-400 border border-rose-500/30 font-bold animate-pulse">
+                      {activeAlertCount} 预警
+                    </span>
+                  )}
+                </div>
+              )}
             </Link>
           );
         })}

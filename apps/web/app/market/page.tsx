@@ -15,11 +15,16 @@ import {
   Globe2,
   Building2,
   Sparkles,
+  Sunrise,
+  Sunset,
 } from "lucide-react";
+import { MarketReportsModal } from "./components/market-reports-modal";
 
 export default function MarketPage() {
   const { overview, fetchOverview, loading, error } = useMarketStore();
   const [activeCategory, setActiveCategory] = useState<"ALL" | "A_SHARE" | "DIVIDEND" | "HK" | "US" | "KR_JP">("ALL");
+  const [reportModalOpen, setReportModalOpen] = useState(false);
+  const [reportModalType, setReportModalType] = useState<"MORNING_RADAR" | "CLOSING_REVIEW">("MORNING_RADAR");
 
   useEffect(() => {
     fetchOverview();
@@ -73,20 +78,53 @@ export default function MarketPage() {
           </p>
         </div>
 
-        <div className="flex items-center gap-3">
-          <span className="text-xs text-default-400">
-            更新时间: {overview?.updatedAt || "盘中/最新"}
+        <div className="flex items-center gap-2.5 flex-wrap">
+          {/* 早盘前瞻按钮 */}
+          <button
+            type="button"
+            onClick={() => {
+              setReportModalType("MORNING_RADAR");
+              setReportModalOpen(true);
+            }}
+            className="px-3.5 py-1.5 rounded-xl bg-gradient-to-r from-amber-500/20 to-orange-500/20 hover:from-amber-500/30 hover:to-orange-500/30 border border-amber-500/30 text-amber-300 text-xs font-semibold transition-all flex items-center gap-1.5 shadow-sm hover:scale-105 cursor-pointer"
+          >
+            <Sunrise className="w-3.5 h-3.5 text-amber-400" />
+            <span>🌅 今日早盘前瞻</span>
+          </button>
+
+          {/* 收盘复盘按钮 */}
+          <button
+            type="button"
+            onClick={() => {
+              setReportModalType("CLOSING_REVIEW");
+              setReportModalOpen(true);
+            }}
+            className="px-3.5 py-1.5 rounded-xl bg-gradient-to-r from-primary/20 to-blue-600/20 hover:from-primary/30 hover:to-blue-600/30 border border-primary/30 text-primary text-xs font-semibold transition-all flex items-center gap-1.5 shadow-sm hover:scale-105 cursor-pointer"
+          >
+            <Sunset className="w-3.5 h-3.5 text-primary" />
+            <span>🌆 今日收盘复盘</span>
+          </button>
+
+          <span className="text-xs text-default-400 ml-1">
+            更新: {overview?.updatedAt || "盘中/最新"}
           </span>
           <button
             onClick={() => fetchOverview()}
             disabled={loading["overview"]}
-            className="px-3 py-1.5 rounded-xl bg-default-100/80 hover:bg-default-200 text-xs font-medium transition-colors flex items-center gap-1.5"
+            className="px-3 py-1.5 rounded-xl bg-default-100/80 hover:bg-default-200 text-xs font-medium transition-colors flex items-center gap-1.5 cursor-pointer"
           >
             <RefreshCw className={`w-3.5 h-3.5 ${loading["overview"] ? "animate-spin text-primary" : ""}`} />
             刷新
           </button>
         </div>
       </div>
+
+      {/* 研报阅读器 Modal */}
+      <MarketReportsModal
+        isOpen={reportModalOpen}
+        initialType={reportModalType}
+        onClose={() => setReportModalOpen(false)}
+      />
 
       {/* 核心指标与股债比价罗盘卡片 */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">

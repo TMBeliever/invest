@@ -15,9 +15,11 @@ import {
   AlertTriangle,
   History,
   Activity,
+  ShieldAlert,
 } from "lucide-react";
 import { AuditLogsModal } from "../components/audit-logs-modal";
 import { XRayDashboard } from "./components/xray-dashboard";
+import { SentinelRadarDashboard } from "./components/sentinel-radar";
 
 const CATEGORY_META: Record<AssetCategory, { label: string; color: string; icon: string }> = {
   DEPOSIT: { label: "存款", color: "text-blue-400", icon: "💰" },
@@ -82,7 +84,7 @@ export default function AssetsPage() {
   const [deleteConfirmAsset, setDeleteConfirmAsset] = useState<AssetItem | null>(null);
   const [deleting, setDeleting] = useState(false);
   const [auditLogsOpen, setAuditLogsOpen] = useState(false);
-  const [activeView, setActiveView] = useState<"LIST" | "XRAY">("LIST");
+  const [activeView, setActiveView] = useState<"LIST" | "XRAY" | "SENTINEL">("LIST");
 
   useEffect(() => {
     fetchSummary();
@@ -297,9 +299,27 @@ export default function AssetsPage() {
             PRO
           </span>
         </button>
+        <button
+          type="button"
+          onClick={() => setActiveView("SENTINEL")}
+          className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer ${
+            activeView === "SENTINEL"
+              ? "bg-gradient-to-r from-amber-500 via-orange-500 to-rose-500 text-white shadow-md shadow-amber-500/25"
+              : "text-default-400 hover:text-white hover:bg-white/5"
+          }`}
+        >
+          <ShieldAlert className="w-3.5 h-3.5" />
+          <span>🛡️ 智能哨兵与风控雷达</span>
+          <span className="text-[9px] px-1.5 py-0.2 rounded-full bg-rose-500/20 text-rose-300 border border-rose-500/30">
+            PRO
+          </span>
+        </button>
       </div>
 
-      {activeView === "XRAY" ? (
+      {activeView === "SENTINEL" ? (
+        /* 智能哨兵雷达视图 */
+        <SentinelRadarDashboard />
+      ) : activeView === "XRAY" ? (
         /* X-Ray 全景透视看板 */
         <XRayDashboard
           onAskAI={(prompt) => {

@@ -3,22 +3,26 @@
 import { Settings, Server, Database, Moon, Bell, Shield } from "lucide-react";
 import { useConfigStore } from "@investscope/core";
 import { SegmentedTabs } from "@investscope/ui";
+import { NotificationSettings } from "./components/notification-settings";
 
 export default function SettingsPage() {
   const { theme, setTheme } = useConfigStore();
 
   return (
-    <div className="p-6 max-w-[1000px] mx-auto">
+    <div className="p-6 max-w-[1000px] mx-auto space-y-6">
       {/* Header */}
-      <div className="mb-6">
+      <div>
         <h1 className="text-2xl font-bold tracking-tight flex items-center gap-2">
           <Settings className="w-6 h-6 text-primary" />
           系统设置
         </h1>
-        <p className="text-sm text-default-400 mt-1">数据源配置 · 主题外观 · 通知提醒</p>
+        <p className="text-sm text-default-400 mt-1">智能推送中台 · 数据源配置 · 外观偏好</p>
       </div>
 
       <div className="space-y-6">
+        {/* 智能推送与通知偏好设置 */}
+        <NotificationSettings />
+
         {/* 数据源设置 */}
         <div className="glass-panel p-6 animate-fade-in">
           <h2 className="text-base font-semibold mb-4 flex items-center gap-2">
