@@ -405,11 +405,12 @@ export default function AssetsPage() {
                 </tr>
               )}
               {filteredAssets.map((a) => {
-                const meta = CATEGORY_META[a.category];
-                const isPosition = a.category === "STOCK" || a.category === "FUND";
+                const rawCat = ((a.category || "OTHER").toUpperCase()) as AssetCategory;
+                const meta = CATEGORY_META[rawCat] || CATEGORY_META.DEPOSIT || CATEGORY_META.OTHER;
+                const isPosition = rawCat === "STOCK" || rawCat === "FUND";
                 const profit = a.profit ?? 0;
                 const profitUp = profit >= 0;
-                const isOtcFund = a.category === "FUND" && a.fundType === "OTC";
+                const isOtcFund = rawCat === "FUND" && a.fundType === "OTC";
 
                 return (
                   <tr key={a.id} className="border-b border-divider/50 hover:bg-default-50/50 transition-colors">
@@ -452,7 +453,7 @@ export default function AssetsPage() {
                         <div>
                           <span>{a.annualRate}%</span>
                           <div className="text-[10px] text-default-400 font-normal">
-                            {PAYOUT_LABELS[a.payoutMethod || "MATURITY"] || "到期付息"}
+                            {PAYOUT_LABELS[a.payoutMethod || "MATURITY"] || a.payoutMethod || "到期付息"}
                           </div>
                         </div>
                       ) : (

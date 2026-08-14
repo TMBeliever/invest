@@ -88,7 +88,9 @@ def _build_system_prompt(
 - 【场景1：截图录入 / 批量入账 / 加仓记账】:
   * 截图录入时，默认 `duplicateStrategy: "SYNC_UPDATE"`（已有标的自动覆盖同步最新数据）；
   * 对话加仓时，默认 `duplicateStrategy: "WEIGHTED_MERGE"`（已有标的自动按公式计算加权平均成本与合并股数）；
-  * 支付宝/天天基金场外公募基金：`category: "FUND", fundType: "OTC"`，填入当前市值 `amount` 与持有收益 `profit`。
+  * 股票/场内ETF：`category: "STOCK"`，填写 `name`, `code`, `shares`, `costPrice`；
+  * 场外公募基金：`category: "FUND", fundType: "OTC"`，填入当前市值 `amount` 与持有收益 `profit`；
+  * 银行存款/定期存单：`category: "DEPOSIT"`，填入存款本金 `amount`（纯数字不带逗号）、约定年利率 `annualRate`（如 4.0 代表 4.0%）、结息方式 `payoutMethod: "QUARTERLY"`（按季付息）或 `"MATURITY"`（到期付息）或 `"MONTHLY"`（按月付息）、存单类型 `depositType: "FIXED"`（定期）或 `"DEMAND"`（活期）、到期日 `maturityDate`（如 "2027-11-12"）。
   示例:
   ```action:investscope
   {{
@@ -105,6 +107,16 @@ def _build_system_prompt(
           "shares": 600,
           "costPrice": 25.276,
           "notes": "持仓录入"
+        }},
+        {{
+          "category": "DEPOSIT",
+          "name": "享存3月 (定期存款)",
+          "amount": 98450.88,
+          "annualRate": 4.0,
+          "depositType": "FIXED",
+          "payoutMethod": "QUARTERLY",
+          "maturityDate": "2027-11-12",
+          "notes": "按季付息 4.00%"
         }},
         {{
           "category": "FUND",

@@ -161,15 +161,24 @@ def _enrich_assets(raw_assets: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
             })
 
         elif category in ("DEPOSIT", "WEALTH"):
-            amount = a.get("amount") or 0.0
-            annual_rate = a.get("annual_rate") or 0.0
+            raw_amount = a.get("amount")
+            raw_rate = a.get("annual_rate")
+            
+            def _to_float(v):
+                if v is None: return 0.0
+                if isinstance(v, (int, float)): return float(v)
+                try: return float(str(v).replace(",", "").replace("¥", "").replace("%", "").strip())
+                except: return 0.0
+
+            amount = _to_float(raw_amount)
+            annual_rate = _to_float(raw_rate)
             start_date_str = a.get("start_date")
             days_held = None
             accrued_interest = None
 
             if start_date_str:
                 try:
-                    start_dt = datetime.datetime.strptime(start_date_str, "%Y-%m-%d").date()
+                    start_dt = datetime.datetime.strptime(str(start_date_str).strip(), "%Y-%m-%d").date()
                     today = datetime.date.today()
                     if today >= start_dt:
                         days_held = (today - start_dt).days

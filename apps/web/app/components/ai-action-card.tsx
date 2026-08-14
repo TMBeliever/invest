@@ -36,6 +36,9 @@ export interface InvestScopeAction {
       profit?: number;
       annualRate?: number;
       depositType?: string;
+      payoutMethod?: string;
+      startDate?: string;
+      maturityDate?: string;
       fundType?: string;
       notes?: string;
     }>;
@@ -191,8 +194,12 @@ export function AIActionCard({ action, onSuccess }: AIActionCardProps) {
     const selectedCount = selectedIndices.length;
     const totalEstValue = selectedIndices.reduce((acc, idx) => {
       const item = items[idx];
-      if (item.amount) return acc + item.amount;
-      if (item.shares && item.costPrice) return acc + item.shares * item.costPrice;
+      if (!item) return acc;
+      const amt = Number(item.amount || 0);
+      const shs = Number(item.shares || 0);
+      const prc = Number(item.costPrice || 0);
+      if (amt > 0) return acc + amt;
+      if (shs > 0 && prc > 0) return acc + shs * prc;
       return acc;
     }, 0);
 
@@ -276,8 +283,12 @@ export function AIActionCard({ action, onSuccess }: AIActionCardProps) {
         <div className="p-2.5 space-y-1.5 max-h-64 overflow-y-auto">
           {items.map((item, idx) => {
             const isChecked = selectedIndices.includes(idx);
-            const tag = CATEGORY_TAGS[item.category] || CATEGORY_TAGS.STOCK;
-            const itemVal = item.amount || (item.shares && item.costPrice ? item.shares * item.costPrice : 0);
+            const rawCat = (item.category || "STOCK").toUpperCase();
+            const tag = CATEGORY_TAGS[rawCat] || CATEGORY_TAGS.DEPOSIT || CATEGORY_TAGS.STOCK;
+            const amtNum = Number(item.amount || 0);
+            const shsNum = Number(item.shares || 0);
+            const prcNum = Number(item.costPrice || 0);
+            const itemVal = amtNum > 0 ? amtNum : (shsNum > 0 && prcNum > 0 ? shsNum * prcNum : 0);
 
             // 查找已有持仓匹配
             const matchedExisting = existingAssets.find(
@@ -334,16 +345,21 @@ export function AIActionCard({ action, onSuccess }: AIActionCardProps) {
                       )}
                     </div>
                     <div className="text-[10px] text-default-400 mt-0.5 flex items-center gap-1.5 flex-wrap">
-                      {item.shares != null && item.costPrice != null ? (
+                      {shsNum > 0 && prcNum > 0 ? (
                         <span>
-                          {item.shares.toLocaleString()}股 · 成本 ¥{item.costPrice.toFixed(3)}
+                          {shsNum.toLocaleString()}股 · 成本 ¥{prcNum.toFixed(3)}
                         </span>
-                      ) : item.amount != null ? (
-                        <span>本金 ¥{((item.amount || 0) - (item.profit || 0)).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+                      ) : amtNum > 0 ? (
+                        <span>本金 ¥{amtNum.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
                       ) : null}
+                      {item.annualRate != null && (
+                        <span className="text-blue-300 font-medium">
+                          · 年利率 {item.annualRate}% {item.payoutMethod === "QUARTERLY" ? "(按季付息)" : item.payoutMethod === "MONTHLY" ? "(按月派息)" : item.payoutMethod === "ANNUAL" ? "(按年派息)" : "(到期付息)"}
+                        </span>
+                      )}
                       {item.profit != null ? (
-                        <span className={`font-semibold ${item.profit >= 0 ? "text-rose-400" : "text-emerald-400"}`}>
-                          · 浮盈 {item.profit >= 0 ? "+" : ""}¥{item.profit.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                        <span className={`font-semibold ${Number(item.profit) >= 0 ? "text-rose-400" : "text-emerald-400"}`}>
+                          · 浮盈 {Number(item.profit) >= 0 ? "+" : ""}¥{Number(item.profit).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                         </span>
                       ) : null}
                       {item.notes ? <span className="text-default-500">({item.notes})</span> : null}

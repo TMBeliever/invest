@@ -68,7 +68,7 @@ export function AIPortfolioCard({ onViewXRay }: { onViewXRay?: () => void }) {
       </div>
 
       <div className="mt-3.5 space-y-2.5">
-        {data?.diagnosisText.map((text: string, idx: number) => (
+        {(data?.diagnosisText || []).map((text: string, idx: number) => (
           <div key={idx} className="flex items-start gap-2 text-xs text-default-300">
             {idx === 0 && <TrendingUp className="w-4 h-4 text-emerald-400 shrink-0 mt-0.5" />}
             {idx === 1 && <AlertTriangle className="w-4 h-4 text-amber-400 shrink-0 mt-0.5" />}

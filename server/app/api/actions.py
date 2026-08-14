@@ -11,31 +11,91 @@ router = APIRouter()
 
 
 class ActionPayload(BaseModel):
-    type: str  # "IMPORT_ASSETS" | "UPDATE_ASSET" | "DELETE_ASSET" | "ADD_WATCHLIST" | "SET_ALERT"
+    type: str
     title: Optional[str] = "执行操作"
     summary: Optional[str] = None
     source: Optional[str] = "AI_ACTION"
     payload: Dict[str, Any]
 
 
+class ActionExecutionRequest(BaseModel):
+    type: str
+    title: Optional[str] = "执行操作"
+    summary: Optional[str] = None
+    source: Optional[str] = "AI_ACTION"
+    payload: Dict[str, Any]
+
+
+def _clean_float(val: Any) -> Optional[float]:
+    if val is None:
+        return None
+    if isinstance(val, (int, float)):
+        return float(val)
+    if isinstance(val, str):
+        s = val.replace(",", "").replace("¥", "").replace("$", "").replace("%", "").strip()
+        try:
+            return float(s)
+        except Exception:
+            return None
+    return None
+
+
+def _clean_category(cat: Optional[str], name: str = "") -> str:
+    c = str(cat or "").strip().upper()
+    if c in ("DEPOSIT", "STOCK", "FUND", "WEALTH", "OTHER"):
+        return c
+    if any(k in c or k in name for k in ("存款", "存单", "活期", "定期", "享存", "大额存单", "BANK", "DEPOSIT")):
+        return "DEPOSIT"
+    if any(k in c or k in name for k in ("理财", "理财产品", "信托", "资管", "WEALTH")):
+        return "WEALTH"
+    if any(k in c or k in name for k in ("基金", "ETF", "QDII", "联接", "公募", "FUND")):
+        return "FUND"
+    if any(k in c or k in name for k in ("股票", "证券", "STOCK")):
+        return "STOCK"
+    return "OTHER"
+
+
+def _clean_payout_method(method: Optional[str]) -> str:
+    m = str(method or "").strip().upper()
+    if m in ("MATURITY", "MONTHLY", "QUARTERLY", "ANNUAL"):
+        return m
+    if any(k in m for k in ("季", "QUARTER")):
+        return "QUARTERLY"
+    if any(k in m for k in ("月", "MONTH")):
+        return "MONTHLY"
+    if any(k in m for k in ("年", "ANNUAL", "YEAR")):
+        return "ANNUAL"
+    return "MATURITY"
+
+
+def _clean_deposit_type(dtype: Optional[str], name: str = "") -> str:
+    d = str(dtype or "").strip().upper()
+    if d in ("DEMAND", "FIXED"):
+        return d
+    if any(k in d or k in name for k in ("定", "存单", "年", "月", "FIXED")):
+        return "FIXED"
+    return "DEMAND"
+
+
 @router.post("/execute")
-def execute_action(
-    action: ActionPayload,
+def execute_agent_action(
+    action: ActionExecutionRequest,
     current_user: Dict[str, Any] = Depends(get_current_user),
 ) -> Dict[str, Any]:
     """
-    通用 AI Action 执行入口：
-    支持资产批量入账 (含覆盖更新与加权合并)、自然语言修改 (UPDATE_ASSET)、
-    自然语言清仓删除 (DELETE_ASSET) 以及未来自选与预警扩展。
+    统一执行 AI Action 操作指令
     """
     user_id = current_user["id"]
-    action_type = action.type
-    payload = action.payload
+    action_type = action.type.upper()
+    payload = action.payload or {}
 
-    if action_type == "IMPORT_ASSETS":
-        items = payload.get("items", [])
+    logger.info(f"⚡ [Action Execute] User={user_id}, Type={action_type}, PayloadKeys={list(payload.keys())}")
+
+    # 1. 批量入库/加仓 (IMPORT_ASSETS)
+    if action_type in ("IMPORT_ASSETS", "ADD_ASSETS", "BATCH_ADD_ASSETS"):
+        items = payload.get("items") or []
         if not items:
-            raise HTTPException(status_code=400, detail="待导入资产列表为空")
+            raise HTTPException(status_code=400, detail="items 列表不能为空")
 
         # 默认策略：若为 OCR 截图默认 SYNC_UPDATE (覆盖更新)，若为对话加仓默认 WEIGHTED_MERGE (加权合并)
         default_strategy = "SYNC_UPDATE" if action.source == "AI_OCR" else "WEIGHTED_MERGE"
@@ -50,21 +110,23 @@ def execute_action(
         merged_count = 0
 
         for it in items:
-            category = it.get("category", "STOCK")
-            name = it.get("name", "未命名资产").replace("...", "").strip()
+            raw_cat = it.get("category")
+            name = str(it.get("name") or "未命名资产").replace("...", "").strip()
+            category = _clean_category(raw_cat, name)
             code = it.get("code")
             fund_type = it.get("fundType") or it.get("fund_type")
-            shares = float(it["shares"]) if it.get("shares") is not None else None
-            cost_price = float(it["costPrice"]) if it.get("costPrice") is not None else (
-                float(it["cost_price"]) if it.get("cost_price") is not None else None
-            )
-            amount = float(it["amount"]) if it.get("amount") is not None else None
-            profit = float(it["profit"]) if it.get("profit") is not None else (
-                float(it["profitAmount"]) if it.get("profitAmount") is not None else None
-            )
+            shares = _clean_float(it.get("shares"))
+            cost_price = _clean_float(it.get("costPrice")) or _clean_float(it.get("cost_price"))
+            amount = _clean_float(it.get("amount"))
+            profit = _clean_float(it.get("profit")) or _clean_float(it.get("profitAmount"))
+            annual_rate = _clean_float(it.get("annualRate")) or _clean_float(it.get("annual_rate"))
+            payout_method = _clean_payout_method(it.get("payoutMethod") or it.get("payout_method"))
+            deposit_type = _clean_deposit_type(it.get("depositType") or it.get("deposit_type"), name)
+            start_date = it.get("startDate") or it.get("start_date")
+            maturity_date = it.get("maturityDate") or it.get("maturity_date")
 
             # 智能公募基金/QDII/债券处理 (自动补全6位代码、全称与净值份额推导，精准保留历史浮盈)
-            is_fund_like = category == "FUND" or any(k in name for k in ["基金", "债券", "联接", "纳斯达克", "标普", "QDII", "指数", "ETF"])
+            is_fund_like = category == "FUND" or any(k in name for k in ["基金", "联接", "纳斯达克", "标普", "QDII", "指数", "ETF"])
             if is_fund_like:
                 category = "FUND"
 
@@ -94,8 +156,15 @@ def execute_action(
                 elif amount and profit is not None and (shares is None or shares == 0):
                     shares = round(amount, 2)
                     cost_val = amount - profit
-                    cost_price = round(cost_val / amount, 4)
+                    cost_price = round(cost_val / amount, 4) if amount > 0 else 1.0
                     amount = None
+
+            # 存款/理财兜底处理
+            if category in ("DEPOSIT", "WEALTH"):
+                if amount is None and shares is not None and cost_price is not None:
+                    amount = round(shares * cost_price, 2)
+                elif amount is None and profit is not None:
+                    amount = profit
 
             # 查找是否已有持仓
             matched_asset = existing_by_code.get(code) if code else existing_by_name.get(name)
@@ -109,11 +178,11 @@ def execute_action(
                     "shares": shares,
                     "cost_price": cost_price,
                     "amount": amount,
-                    "annual_rate": it.get("annualRate") or it.get("annual_rate") or matched_asset.get("annual_rate"),
-                    "deposit_type": it.get("depositType") or matched_asset.get("deposit_type"),
-                    "start_date": it.get("startDate") or matched_asset.get("start_date"),
-                    "maturity_date": it.get("maturityDate") or matched_asset.get("maturity_date"),
-                    "payout_method": it.get("payoutMethod") or matched_asset.get("payout_method"),
+                    "annual_rate": annual_rate if annual_rate is not None else matched_asset.get("annual_rate"),
+                    "deposit_type": deposit_type or matched_asset.get("deposit_type"),
+                    "start_date": start_date or matched_asset.get("start_date"),
+                    "maturity_date": maturity_date or matched_asset.get("maturity_date"),
+                    "payout_method": payout_method or matched_asset.get("payout_method"),
                     "fund_type": fund_type or matched_asset.get("fund_type"),
                     "notes": it.get("notes") or matched_asset.get("notes") or "AI 同步更新",
                 }
@@ -154,11 +223,11 @@ def execute_action(
                         "amount": amount,
                         "shares": shares,
                         "cost_price": cost_price,
-                        "annual_rate": it.get("annualRate"),
-                        "deposit_type": it.get("depositType"),
-                        "start_date": it.get("startDate"),
-                        "maturity_date": it.get("maturityDate"),
-                        "payout_method": it.get("payoutMethod"),
+                        "annual_rate": annual_rate,
+                        "deposit_type": deposit_type,
+                        "start_date": start_date,
+                        "maturity_date": maturity_date,
+                        "payout_method": payout_method,
                         "fund_type": fund_type,
                         "notes": it.get("notes", "AI 录入"),
                     })
@@ -172,11 +241,11 @@ def execute_action(
                     "amount": amount,
                     "shares": shares,
                     "cost_price": cost_price,
-                    "annual_rate": it.get("annualRate") or it.get("annual_rate"),
-                    "deposit_type": it.get("depositType") or it.get("deposit_type"),
-                    "start_date": it.get("startDate") or it.get("start_date"),
-                    "maturity_date": it.get("maturityDate") or it.get("maturity_date"),
-                    "payout_method": it.get("payoutMethod") or it.get("payout_method"),
+                    "annual_rate": annual_rate,
+                    "deposit_type": deposit_type,
+                    "start_date": start_date,
+                    "maturity_date": maturity_date,
+                    "payout_method": payout_method,
                     "fund_type": fund_type,
                     "notes": it.get("notes", "AI 识别录入"),
                 })
