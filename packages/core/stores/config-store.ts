@@ -12,7 +12,7 @@ export const useConfigStore = create<ConfigState>()(
   persist(
     (set) => ({
       theme: "dark",
-      apiBaseUrl: process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000",
+      apiBaseUrl: process.env.NEXT_PUBLIC_API_URL || "",
       setTheme: (theme) => set({ theme }),
       setApiBaseUrl: (url) => set({ apiBaseUrl: url }),
     }),

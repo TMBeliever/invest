@@ -1,7 +1,19 @@
 import { useEffect, useRef, useState, useCallback } from "react";
 import type { StockQuote } from "@investscope/data/schemas";
 
-const WS_URL = process.env.NEXT_PUBLIC_WS_URL || "ws://127.0.0.1:8000/ws/quotes";
+function getWsUrl(): string {
+  if (process.env.NEXT_PUBLIC_WS_URL) {
+    return process.env.NEXT_PUBLIC_WS_URL;
+  }
+  if (typeof window !== "undefined") {
+    const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
+    const host = window.location.hostname;
+    // 映射规则：前端 3000(本地开发) -> 后端 8000; 前端 3006(生产部署) -> 后端 8006; 其余情况自适应
+    const port = window.location.port === "3006" ? "8006" : (window.location.port === "3000" ? "8000" : (window.location.port || "8000"));
+    return `${protocol}//${host}:${port}/ws/quotes`;
+  }
+  return "ws://127.0.0.1:8000/ws/quotes";
+}
 
 
 
@@ -53,7 +65,7 @@ export function useQuoteWs(initialCodes: string[] = []): UseQuoteWsReturn {
       }
 
       try {
-        const ws = new WebSocket(WS_URL);
+        const ws = new WebSocket(getWsUrl());
         wsRef.current = ws;
 
         ws.onopen = () => {
