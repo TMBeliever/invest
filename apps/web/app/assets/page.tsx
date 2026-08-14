@@ -13,7 +13,9 @@ import {
   Trash2,
   X,
   AlertTriangle,
+  History,
 } from "lucide-react";
+import { AuditLogsModal } from "../components/audit-logs-modal";
 
 const CATEGORY_META: Record<AssetCategory, { label: string; color: string; icon: string }> = {
   DEPOSIT: { label: "存款", color: "text-blue-400", icon: "💰" },
@@ -77,6 +79,7 @@ export default function AssetsPage() {
   const [formError, setFormError] = useState<string | null>(null);
   const [deleteConfirmAsset, setDeleteConfirmAsset] = useState<AssetItem | null>(null);
   const [deleting, setDeleting] = useState(false);
+  const [auditLogsOpen, setAuditLogsOpen] = useState(false);
 
   useEffect(() => {
     fetchSummary();
@@ -127,8 +130,8 @@ export default function AssetsPage() {
           name: res.name,
           category: res.category,
           fundType: res.fundType ?? f.fundType,
-          // 只要代码查到新行情，强行将成本价更新为最新的现价/净值
-          costPrice: res.currentPrice ? Number(res.currentPrice.toFixed(4)) : f.costPrice,
+          // 仅当用户未填写成本价时，默认填入当前现价/净值作为建议
+          costPrice: f.costPrice ?? (res.currentPrice ? Number(res.currentPrice.toFixed(4)) : undefined),
         }));
       } else {
         setLookupInfo(null);
@@ -245,8 +248,16 @@ export default function AssetsPage() {
         <div className="flex items-center gap-3">
           {loading["summary"] && <RefreshCw className="w-4 h-4 animate-spin text-default-400" />}
           <button
+            onClick={() => setAuditLogsOpen(true)}
+            className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-default-100 hover:bg-default-200 text-default-300 hover:text-white text-sm font-medium transition-colors border border-white/5 cursor-pointer"
+            title="查看全量资产变更日志与时光机回滚"
+          >
+            <History className="w-4 h-4 text-primary" />
+            <span className="hidden sm:inline">变更记录 & 时光机</span>
+          </button>
+          <button
             onClick={openAddModal}
-            className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-primary text-white text-sm font-medium hover:bg-primary/90 transition-colors shadow-lg shadow-primary/25"
+            className="flex items-center gap-2 px-4 py-2 rounded-xl bg-primary text-white text-sm font-medium hover:bg-primary/90 transition-colors shadow-lg shadow-primary/25 cursor-pointer"
           >
             <Plus className="w-4 h-4" />
             添加资产
@@ -795,6 +806,9 @@ export default function AssetsPage() {
           </div>
         </div>
       )}
+
+      {/* 资产审计流水与时光机弹窗 */}
+      <AuditLogsModal isOpen={auditLogsOpen} onClose={() => setAuditLogsOpen(false)} />
     </div>
   );
 }

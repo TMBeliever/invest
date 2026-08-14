@@ -339,3 +339,64 @@ def delete_asset(asset_id: int, current_user: Dict[str, Any] = Depends(get_curre
     if not ok:
         raise HTTPException(status_code=404, detail="资产不存在或无权限删除")
     return {"status": "ok"}
+
+
+class BatchAssetPayload(BaseModel):
+    items: List[AssetPayload]
+    source: Optional[str] = "AI_OCR"
+    description: Optional[str] = "AI 识别批量录入"
+
+
+@router.post("/batch")
+def batch_add_assets(
+    payload: BatchAssetPayload,
+    current_user: Dict[str, Any] = Depends(get_current_user),
+) -> Dict[str, Any]:
+    user_id = current_user["id"]
+    for item in payload.items:
+        _validate_payload(item)
+    
+    storage_items = [item.to_storage_dict() for item in payload.items]
+    ids = storage_db.batch_add_assets(
+        user_id=user_id,
+        items=storage_items,
+        source=payload.source or "AI_OCR",
+        description=payload.description or "AI 批量录入",
+    )
+    return {"status": "ok", "ids": ids, "count": len(ids)}
+
+
+class BatchDeletePayload(BaseModel):
+    ids: List[int]
+    source: Optional[str] = "ROLLBACK"
+
+
+@router.post("/batch-delete")
+def batch_delete_assets(
+    payload: BatchDeletePayload,
+    current_user: Dict[str, Any] = Depends(get_current_user),
+) -> Dict[str, Any]:
+    user_id = current_user["id"]
+    ok = storage_db.batch_delete_assets(user_id, payload.ids, source=payload.source or "ROLLBACK")
+    return {"status": "ok", "success": ok}
+
+
+@router.get("/audit-logs")
+def get_audit_logs(
+    limit: int = 50,
+    current_user: Dict[str, Any] = Depends(get_current_user),
+) -> List[Dict[str, Any]]:
+    user_id = current_user["id"]
+    return storage_db.get_asset_audit_logs(user_id, limit=limit)
+
+
+@router.post("/audit-logs/{log_id}/rollback")
+def rollback_audit_log(
+    log_id: int,
+    current_user: Dict[str, Any] = Depends(get_current_user),
+) -> Dict[str, Any]:
+    user_id = current_user["id"]
+    res = storage_db.rollback_asset_action(user_id, log_id)
+    if res.get("status") == "error":
+        raise HTTPException(status_code=400, detail=res.get("message", "回滚失败"))
+    return res

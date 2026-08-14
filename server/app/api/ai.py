@@ -21,23 +21,37 @@ router = APIRouter()
 class ChatMessagePayload(BaseModel):
     role: str
     content: str
+    images: Optional[List[str]] = None  # Base64 或图片 URL 列表 (多模态输入)
 
 
 class ChatRequestPayload(BaseModel):
     sessionId: Optional[str] = None
     messages: List[ChatMessagePayload]
     model: Optional[str] = None
+    mode: Optional[str] = "finance"  # "finance" | "general"
 
 
 def _build_system_prompt(
     user_id: str,
     session_summary: Optional[str] = None,
     user_query: Optional[str] = None,
+    mode: str = "finance",
 ) -> str:
     now_str = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     weekday_str = ["星期一", "星期二", "星期三", "星期四", "星期五", "星期六", "星期日"][
         datetime.datetime.now().weekday()
     ]
+    summary_part = f"\n\n[早期对话历史摘要]:\n{session_summary}" if session_summary else ""
+
+    if mode == "general":
+        return f"""你是一名知识渊博、解答详尽、逻辑严谨的【通用智能 AI 助手】。
+当前精准时间: {now_str} {weekday_str}
+
+[核心能力与回答准则]:
+1. 具备广泛的通用知识储备，支持科学常识、文本创作、代码编写与调试、逻辑推理、外语翻译、工作生活咨询等全方位场景。
+2. 语言风格亲切、专业、结构清晰，多使用 Markdown 标题、加粗、列表与代码块进行条理化表达。
+3. 针对用户的各类提问提供直接、深入、富有建设性的回答。{summary_part}
+"""
 
     # 1. 安全读取用户真实持仓 (带异常保护与降级)
     try:
@@ -224,6 +238,74 @@ def _build_system_prompt(
 1. 语言风格亲切、专业、洞察深刻。多用 Markdown 标题、加粗、列表与引用卡片。
 2. 结合用户持仓集中度、现金仓比例与被动收益率，给出具有实操性的建议。
 3. 若提问涉及具体股票或大盘，请基于上方提供的真实数据进行深度剖析。
+4. 【智能 Action 操作卡片生成规范】:
+当用户的提问或上传的截图表达了明确的操作意图时，先给出亲切专业的解读与分析，并在回答最底部输出标准的 ```action:investscope 结构化代码块（前端会自动渲染为高颜值的交互操作卡片）：
+
+- 【场景1：截图录入 / 批量入账 / 加仓记账】:
+  * 截图录入时，默认 `duplicateStrategy: "SYNC_UPDATE"`（已有标的自动覆盖同步最新数据）；
+  * 对话加仓时，默认 `duplicateStrategy: "WEIGHTED_MERGE"`（已有标的自动按公式计算加权平均成本与合并股数）；
+  * 支付宝/天天基金场外公募基金：`category: "FUND", fundType: "OTC"`，填入当前市值 `amount` 与持有收益 `profit`。
+  示例:
+  ```action:investscope
+  {{
+    "type": "IMPORT_ASSETS",
+    "title": "持仓资产待入账确认",
+    "summary": "识别出标的与最新市值",
+    "payload": {{
+      "duplicateStrategy": "SYNC_UPDATE",
+      "items": [
+        {{
+          "category": "STOCK",
+          "name": "招商银行",
+          "code": "600036",
+          "shares": 600,
+          "costPrice": 25.276,
+          "notes": "持仓录入"
+        }},
+        {{
+          "category": "FUND",
+          "name": "南方纳斯达克100指数发起A",
+          "fundType": "OTC",
+          "amount": 2739.30,
+          "profit": 289.30,
+          "notes": "公募场外基金"
+        }}
+      ]
+    }}
+  }}
+  ```
+
+- 【场景2：自然语言修改资产 (如“把招行成本改成30”)】:
+  示例:
+  ```action:investscope
+  {{
+    "type": "UPDATE_ASSET",
+    "title": "修改持仓信息确认",
+    "summary": "将 招商银行(600036) 成本价调整为 ¥30.00",
+    "payload": {{
+      "code": "600036",
+      "name": "招商银行",
+      "updates": {{
+        "costPrice": 30.0
+      }}
+    }}
+  }}
+  ```
+
+- 【场景3：自然语言清仓/删除资产 (如“把新和成从持仓移除/卖出”】:
+  示例:
+  ```action:investscope
+  {{
+    "type": "DELETE_ASSET",
+    "title": "清仓移除资产确认",
+    "summary": "将 新和成(002001) 从持仓账本中移除",
+    "dangerLevel": "high",
+    "payload": {{
+      "code": "002001",
+      "name": "新和成"
+    }}
+  }}
+  ```
 """
 
 
@@ -314,7 +396,21 @@ def chat_stream(
     else:
         llm_messages = [{"role": m["role"], "content": m["content"]} for m in all_db_msgs]
 
+    # 多模态图像格式转换 (OpenAI / Gemini Vision 兼容协议)
+    user_images = payload.messages[-1].images if (payload.messages and payload.messages[-1].images) else None
+    if user_images and llm_messages and llm_messages[-1]["role"] == "user":
+        content_blocks: List[Dict[str, Any]] = [
+            {"type": "text", "text": user_msg_content or "请帮我分析识别这张图片中的内容与关键信息"}
+        ]
+        for img_url in user_images:
+            content_blocks.append({
+                "type": "image_url",
+                "image_url": {"url": img_url}
+            })
+        llm_messages[-1]["content"] = content_blocks
+
     requested_model = payload.model
+    requested_mode = payload.mode or "finance"
 
     def event_generator():
         # 1. 第一毫秒立即建立 SSE 握手 (立刻向客户端返回 HTTP 200，绝不让网关超时)
@@ -323,10 +419,10 @@ def chat_stream(
 
         # 2. 在流生成器内部安全组装 System Prompt (带超时与容错保护)
         try:
-            system_prompt = _build_system_prompt(user_id, session_summary, user_msg_content)
+            system_prompt = _build_system_prompt(user_id, session_summary, user_msg_content, mode=requested_mode)
         except Exception as e:
             logger.error(f"组装 System Prompt 异常: {e}")
-            system_prompt = "你是一名精通个人资产配置与高股息投资策略的【InvestScope 智能 AI 投资顾问】。"
+            system_prompt = "你是一名智能 AI 助手。请专业详尽地解答用户的问题。"
 
         llm = get_llm_provider(model=requested_model)
 

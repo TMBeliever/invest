@@ -5,12 +5,32 @@ from typing import Dict, Any, List, Optional
 import logging
 import os
 import datetime
+import time
 
 logger = logging.getLogger(__name__)
 
 # 清除代理，确保直连国内行情源
 os.environ.pop("http_proxy", None)
 os.environ.pop("https_proxy", None)
+
+_TTL_CACHE: Dict[str, Any] = {}
+
+def ttl_cached(seconds: int = 5):
+    """用于高频行情与数据接口的轻量内存 TTL 缓存装饰器"""
+    def decorator(func):
+        def wrapper(*args, **kwargs):
+            key = f"{func.__name__}:{str(args)}:{str(kwargs)}"
+            now = time.time()
+            if key in _TTL_CACHE:
+                cached_data, expire_at = _TTL_CACHE[key]
+                if now < expire_at:
+                    return cached_data
+            result = func(*args, **kwargs)
+            if result is not None:
+                _TTL_CACHE[key] = (result, now + seconds)
+            return result
+        return wrapper
+    return decorator
 
 # ─────────────────────────────────────────────
 # 腾讯行情 API 字段索引（~分隔）
@@ -250,6 +270,7 @@ class AKShareClient:
     # ─── 大盘指数 ───────────────────────────────────────────────────────
 
     @staticmethod
+    @ttl_cached(seconds=3)
     def get_realtime_indices() -> List[Dict[str, Any]]:
         """获取主要指数实时行情"""
         try:
@@ -281,6 +302,7 @@ class AKShareClient:
         except Exception as e:
             logger.error(f"AKShare 指数行情失败: {e}")
     @staticmethod
+    @ttl_cached(seconds=5)
     def get_market_overview() -> Dict[str, Any]:
         """
         获取市场总览全景数据：
@@ -744,6 +766,7 @@ class AKShareClient:
     # ─── 红利成份股排行榜 ───────────────────────────────────────────────
 
     @staticmethod
+    @ttl_cached(seconds=5)
     def get_dividend_constituents(strategy: str = "composite") -> List[Dict[str, Any]]:
         """
         获取中证红利成份股排行榜（支持多策略切页）。
@@ -865,9 +888,9 @@ class AKShareClient:
             AKShareClient._SYMBOL_CACHE[q] = name_map[q]
             return name_map[q]
 
-        # 4. 调取 东方财富 极速 Suggest API (毫秒级响应 5000+ A股/港/美全量股票)
+        # 4. 调取 东方财富 极速 Suggest API (毫秒级响应 5000+ A股/港/美股票 及 全量公募基金)
         try:
-            url = f"https://searchapi.eastmoney.com/api/suggest/get?input={q}&type=14"
+            url = f"https://searchapi.eastmoney.com/api/suggest/get?input={q}&type=14,28,32"
             resp = requests.get(url, timeout=3).json()
             items = resp.get("QuotationCodeTable", {}).get("Data", [])
             if items:
@@ -898,6 +921,7 @@ class AKShareClient:
         return q
 
     @staticmethod
+    @ttl_cached(seconds=60)
     def get_stock_news(code: str) -> List[Dict[str, str]]:
         """获取个股最新 5 条新闻与公告资讯"""
         clean_code = AKShareClient.resolve_symbol(str(code).strip())
@@ -966,6 +990,7 @@ class AKShareClient:
         return report
 
     @staticmethod
+    @ttl_cached(seconds=3)
     def get_realtime_quote(code: str) -> Optional[Dict[str, Any]]:
         """
         获取单只股票实时行情（全量支持代码与中文名）。
@@ -1436,6 +1461,7 @@ class AKShareClient:
         return highlights[:3], risks[:3]
 
     @staticmethod
+    @ttl_cached(seconds=300)
     def get_financial_analysis_report(code_or_name: str) -> Dict[str, Any]:
         """
         获取 100% 官方真实且支持近 10 年时间跨度的财报分析与体检数据。

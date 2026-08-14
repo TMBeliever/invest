@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { usePathname } from "next/navigation";
-import { useAuthStore, useStockDetailStore } from "@investscope/core";
+import { useAuthStore, useStockDetailStore, useAssetStore } from "@investscope/core";
 import {
   Bot,
   X,
@@ -21,12 +21,20 @@ import {
   Cpu,
   ChevronDown,
   Zap,
+  Briefcase,
+  Globe,
+  Square,
+  Image as ImageIcon,
+  RotateCcw,
+  CheckCircle2,
 } from "lucide-react";
+import { AIActionCard, InvestScopeAction } from "./ai-action-card";
 
 interface Message {
   id: string;
   role: "user" | "assistant";
   content: string;
+  images?: string[];
 }
 
 interface ChatSession {
@@ -47,7 +55,44 @@ export const AVAILABLE_MODELS = [
   { id: "gemini-3.7-flash", name: "Gemini 3.7 Flash", tag: "前沿旗舰" },
 ];
 
-function FormattedMarkdown({ content }: { content: string }) {
+function parseActionBlocks(rawContent: string): { parts: Array<{ type: "text" | "action"; content: string; action?: InvestScopeAction }> } {
+  const actionRegex = /```(?:action:investscope|json:import_assets)\s*([\s\S]*?)```/g;
+  const parts: Array<{ type: "text" | "action"; content: string; action?: InvestScopeAction }> = [];
+  let lastIndex = 0;
+  let match;
+
+  while ((match = actionRegex.exec(rawContent)) !== null) {
+    if (match.index > lastIndex) {
+      parts.push({ type: "text", content: rawContent.slice(lastIndex, match.index) });
+    }
+    try {
+      const parsedJson = JSON.parse(match[1].trim());
+      let actionObj: InvestScopeAction;
+      if (Array.isArray(parsedJson)) {
+        actionObj = {
+          type: "IMPORT_ASSETS",
+          title: "AI 识别持仓待入账确认",
+          summary: `共提取出 ${parsedJson.length} 笔标的`,
+          payload: { items: parsedJson },
+        };
+      } else {
+        actionObj = parsedJson;
+      }
+      parts.push({ type: "action", content: match[0], action: actionObj });
+    } catch {
+      parts.push({ type: "text", content: match[0] });
+    }
+    lastIndex = actionRegex.lastIndex;
+  }
+
+  if (lastIndex < rawContent.length) {
+    parts.push({ type: "text", content: rawContent.slice(lastIndex) });
+  }
+
+  return { parts };
+}
+
+function MarkdownTextRenderer({ content }: { content: string }) {
   if (!content) return null;
 
   const lines = content.split("\n");
@@ -217,6 +262,28 @@ function FormattedMarkdown({ content }: { content: string }) {
   return <div className="space-y-1">{elements}</div>;
 }
 
+function FormattedMarkdown({
+  content,
+  onActionSuccess,
+}: {
+  content: string;
+  onActionSuccess?: (res: { message: string; rollbackIds?: number[] }) => void;
+}) {
+  if (!content) return null;
+  const { parts } = parseActionBlocks(content);
+
+  return (
+    <>
+      {parts.map((p, idx) => {
+        if (p.type === "action" && p.action) {
+          return <AIActionCard key={idx} action={p.action} onSuccess={onActionSuccess} />;
+        }
+        return <MarkdownTextRenderer key={idx} content={p.content} />;
+      })}
+    </>
+  );
+}
+
 export function AIAssistantDrawer() {
   const pathname = usePathname();
   const { quote, financialAnalysis } = useStockDetailStore();
@@ -249,13 +316,18 @@ export function AIAssistantDrawer() {
   const [sessions, setSessions] = useState<ChatSession[]>([]);
   const [currentSessionId, setCurrentSessionId] = useState<string | null>(null);
   const [selectedModel, setSelectedModel] = useState<string>("gemini-flash-lite-latest");
+  const [selectedMode, setSelectedMode] = useState<"finance" | "general">("finance");
 
-  // 初始化与持久化保存模型偏好
+  // 初始化与持久化保存模型和模式偏好
   useEffect(() => {
     if (typeof window !== "undefined") {
-      const saved = localStorage.getItem("investscope-ai-model");
-      if (saved && AVAILABLE_MODELS.some((m) => m.id === saved)) {
-        setSelectedModel(saved);
+      const savedModel = localStorage.getItem("investscope-ai-model");
+      if (savedModel && AVAILABLE_MODELS.some((m) => m.id === savedModel)) {
+        setSelectedModel(savedModel);
+      }
+      const savedMode = localStorage.getItem("investscope-ai-mode");
+      if (savedMode === "finance" || savedMode === "general") {
+        setSelectedMode(savedMode);
       }
     }
   }, []);
@@ -267,19 +339,141 @@ export function AIAssistantDrawer() {
     }
   };
 
+  const handleModeChange = (mode: "finance" | "general") => {
+    setSelectedMode(mode);
+    if (typeof window !== "undefined") {
+      localStorage.setItem("investscope-ai-mode", mode);
+    }
+  };
+
   const [messages, setMessages] = useState<Message[]>([
     {
       id: "welcome",
       role: "assistant",
       content:
-        "👋 您好！我是 **InvestScope 智能 AI 投资顾问**。\n\n已自动为您实时锁定：\n- 您的真实持仓与预估年现金流收益\n- 10 年期国债收益率与跨市场 15 大指数\n\n您可以随时问我关于**持仓诊断**、**资金配置建议**或**市场风向分析**！",
+        "👋 您好！我是 **InvestScope 智能 AI 投资顾问**。\n\n已自动为您实时锁定：\n- 您的真实持仓与预估年现金流收益\n- 10 年期国债收益率与跨市场 15 大指数\n\n您可以随时问我关于**持仓诊断**、**资金配置建议**或**市场风向分析**！\n\n💡 *提示：支持直接点击下方 📎 图标上传或使用快捷键 `Ctrl+V` / `Cmd+V` 粘贴券商持仓或行情截图，AI 自动帮您秒级 OCR 识别分析！*",
     },
   ]);
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const abortControllerRef = useRef<AbortController | null>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const [selectedImage, setSelectedImage] = useState<string | null>(null);
+  const [undoToast, setUndoToast] = useState<{ message: string; rollbackIds?: number[] } | null>(null);
+  const undoTimerRef = useRef<NodeJS.Timeout | null>(null);
+
+  const handleActionSuccess = (res: { message: string; rollbackIds?: number[] }) => {
+    setUndoToast(res);
+    if (undoTimerRef.current) clearTimeout(undoTimerRef.current);
+    undoTimerRef.current = setTimeout(() => {
+      setUndoToast(null);
+    }, 8000);
+  };
+
+  const handleUndo = async () => {
+    if (!undoToast?.rollbackIds?.length) {
+      setUndoToast(null);
+      return;
+    }
+    try {
+      const token = useAuthStore.getState().token;
+      const apiBase = process.env.NEXT_PUBLIC_API_URL || "";
+      await fetch(`${apiBase}/api/assets/batch-delete`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        },
+        body: JSON.stringify({ ids: undoToast.rollbackIds }),
+      });
+      useAssetStore.getState().fetchSummary();
+      setUndoToast(null);
+    } catch {
+      // ignore
+    }
+  };
+
+  const processImageFile = (file: File) => {
+    if (!file.type.startsWith("image/")) return;
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      const dataUrl = e.target?.result as string;
+      if (!dataUrl) return;
+
+      // 客户端图片智能预压缩 (保证极速上传与大模型多模态高效解析)
+      const img = new Image();
+      img.onload = () => {
+        const MAX_WIDTH = 1280;
+        const MAX_HEIGHT = 1280;
+        let width = img.width;
+        let height = img.height;
+        if (width > MAX_WIDTH || height > MAX_HEIGHT) {
+          if (width > height) {
+            height = Math.round((height * MAX_WIDTH) / width);
+            width = MAX_WIDTH;
+          } else {
+            width = Math.round((width * MAX_HEIGHT) / height);
+            height = MAX_HEIGHT;
+          }
+        }
+        const canvas = document.createElement("canvas");
+        canvas.width = width;
+        canvas.height = height;
+        const ctx = canvas.getContext("2d");
+        ctx?.drawImage(img, 0, 0, width, height);
+        const compressedDataUrl = canvas.toDataURL("image/jpeg", 0.85);
+        setSelectedImage(compressedDataUrl);
+      };
+      img.src = dataUrl;
+    };
+    reader.readAsDataURL(file);
+  };
+
+  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      processImageFile(file);
+    }
+    if (fileInputRef.current) fileInputRef.current.value = "";
+  };
+
+  const handlePaste = (e: React.ClipboardEvent) => {
+    const items = e.clipboardData?.items;
+    if (!items) return;
+    for (let i = 0; i < items.length; i++) {
+      if (items[i].type.startsWith("image/")) {
+        const file = items[i].getAsFile();
+        if (file) {
+          e.preventDefault();
+          processImageFile(file);
+          break;
+        }
+      }
+    }
+  };
+
+  const handleStop = () => {
+    if (abortControllerRef.current) {
+      abortControllerRef.current.abort();
+      abortControllerRef.current = null;
+    }
+    setLoading(false);
+  };
 
   // 动态构建全页面上下文感知的 Smart Prompt Chips
   const getContextSmartPrompts = () => {
+    if (selectedMode === "general") {
+      return {
+        contextTag: "🌐 通识全能智能助手推荐提问:",
+        prompts: [
+          "📝 帮我撰写一份本周工作与项目复盘总结",
+          "💻 编写一个高效的数据去重与清洗 Python 脚本",
+          "🧠 用通俗易懂的语言解释大模型与 Transformer 核心原理",
+          "🌐 深度分析当前全球主要经济体降息周期的宏观影响",
+        ],
+      };
+    }
+
     if (pathname.startsWith("/dividend/") && pathname !== "/dividend") {
       const urlCode = pathname.split("/")[2] || "";
       const decodedName = decodeURIComponent(urlCode);
@@ -535,14 +729,24 @@ export function AIAssistantDrawer() {
 
   const handleSend = async (customText?: string) => {
     const textToSend = (customText || input).trim();
-    if (!textToSend || loading) return;
+    if ((!textToSend && !selectedImage) || loading) return;
+
+    const currentImg = selectedImage;
+    setSelectedImage(null);
 
     const userMsgId = `user-${Date.now()}`;
     const assistantMsgId = `assistant-${Date.now()}`;
 
+    const effectiveText = textToSend || (currentImg ? "请帮我分析识别这张图片中的关键信息与数据" : "");
+
     const newMessages: Message[] = [
       ...messages,
-      { id: userMsgId, role: "user", content: textToSend },
+      {
+        id: userMsgId,
+        role: "user",
+        content: effectiveText,
+        images: currentImg ? [currentImg] : undefined,
+      },
     ];
 
     setMessages([
@@ -553,16 +757,25 @@ export function AIAssistantDrawer() {
     if (!customText) setInput("");
     setLoading(true);
 
+    const controller = new AbortController();
+    abortControllerRef.current = controller;
+
     try {
       const token = useAuthStore.getState().token;
       const apiPayload = {
         sessionId: currentSessionId,
-        messages: newMessages.map((m) => ({ role: m.role, content: m.content })),
+        messages: newMessages.map((m) => ({
+          role: m.role,
+          content: m.content,
+          images: m.images,
+        })),
         model: selectedModel,
+        mode: selectedMode,
       };
 
       const res = await fetch(`${API_BASE}/api/ai/chat`, {
         method: "POST",
+        signal: controller.signal,
         headers: {
           "Content-Type": "application/json",
           ...(token ? { Authorization: `Bearer ${token}` } : {}),
@@ -617,6 +830,10 @@ export function AIAssistantDrawer() {
       }
       fetchSessions();
     } catch (e: any) {
+      if (e.name === "AbortError" || e.message?.includes("aborted")) {
+        // 用户主动点击停止生成，保留已接收文本，不展示错误报错
+        return;
+      }
       setMessages((prev) =>
         prev.map((msg) =>
           msg.id === assistantMsgId
@@ -626,6 +843,7 @@ export function AIAssistantDrawer() {
       );
     } finally {
       setLoading(false);
+      abortControllerRef.current = null;
     }
   };
 
@@ -661,26 +879,26 @@ export function AIAssistantDrawer() {
             width: `${size.width}px`,
             height: isMinimized ? "60px" : `${size.height}px`,
           }}
-          className="fixed z-50 bg-[#121316] border border-primary/30 shadow-2xl rounded-2xl flex flex-col overflow-hidden transition-shadow duration-300 select-none"
+          className="fixed z-50 bg-[#121316] border border-primary/30 shadow-2xl rounded-2xl flex flex-col overflow-hidden transition-shadow duration-300"
         >
           {/* 8 方向拉伸 Edge Handles */}
           {!isMinimized && (
             <>
-              <div onMouseDown={(e) => handleResizeMouseDown("nw", e)} className="absolute top-0 left-0 w-3.5 h-3.5 cursor-nwse-resize z-20 hover:bg-primary/30 rounded-tl" />
-              <div onMouseDown={(e) => handleResizeMouseDown("ne", e)} className="absolute top-0 right-0 w-3.5 h-3.5 cursor-nesw-resize z-20 hover:bg-primary/30 rounded-tr" />
-              <div onMouseDown={(e) => handleResizeMouseDown("sw", e)} className="absolute bottom-0 left-0 w-3.5 h-3.5 cursor-nesw-resize z-20 hover:bg-primary/30 rounded-bl" />
-              <div onMouseDown={(e) => handleResizeMouseDown("se", e)} className="absolute bottom-0 right-0 w-3.5 h-3.5 cursor-nwse-resize z-20 hover:bg-primary/30 rounded-br" />
-              <div onMouseDown={(e) => handleResizeMouseDown("n", e)} className="absolute top-0 left-4 right-4 h-1.5 cursor-ns-resize z-10 hover:bg-primary/30" />
-              <div onMouseDown={(e) => handleResizeMouseDown("s", e)} className="absolute bottom-0 left-4 right-4 h-1.5 cursor-ns-resize z-10 hover:bg-primary/30" />
-              <div onMouseDown={(e) => handleResizeMouseDown("w", e)} className="absolute left-0 top-4 bottom-4 w-1.5 cursor-ew-resize z-10 hover:bg-primary/30" />
-              <div onMouseDown={(e) => handleResizeMouseDown("e", e)} className="absolute right-0 top-4 bottom-4 w-1.5 cursor-ew-resize z-10 hover:bg-primary/30" />
+              <div onMouseDown={(e) => handleResizeMouseDown("nw", e)} className="absolute top-0 left-0 w-3.5 h-3.5 cursor-nwse-resize z-20 hover:bg-primary/30 rounded-tl select-none" />
+              <div onMouseDown={(e) => handleResizeMouseDown("ne", e)} className="absolute top-0 right-0 w-3.5 h-3.5 cursor-nesw-resize z-20 hover:bg-primary/30 rounded-tr select-none" />
+              <div onMouseDown={(e) => handleResizeMouseDown("sw", e)} className="absolute bottom-0 left-0 w-3.5 h-3.5 cursor-nesw-resize z-20 hover:bg-primary/30 rounded-bl select-none" />
+              <div onMouseDown={(e) => handleResizeMouseDown("se", e)} className="absolute bottom-0 right-0 w-3.5 h-3.5 cursor-nwse-resize z-20 hover:bg-primary/30 rounded-br select-none" />
+              <div onMouseDown={(e) => handleResizeMouseDown("n", e)} className="absolute top-0 left-4 right-4 h-1.5 cursor-ns-resize z-10 hover:bg-primary/30 select-none" />
+              <div onMouseDown={(e) => handleResizeMouseDown("s", e)} className="absolute bottom-0 left-4 right-4 h-1.5 cursor-ns-resize z-10 hover:bg-primary/30 select-none" />
+              <div onMouseDown={(e) => handleResizeMouseDown("w", e)} className="absolute left-0 top-4 bottom-4 w-1.5 cursor-ew-resize z-10 hover:bg-primary/30 select-none" />
+              <div onMouseDown={(e) => handleResizeMouseDown("e", e)} className="absolute right-0 top-4 bottom-4 w-1.5 cursor-ew-resize z-10 hover:bg-primary/30 select-none" />
             </>
           )}
 
           {/* Header 拖拽抓手栏 */}
           <div
             onMouseDown={handleHeaderMouseDown}
-            className="p-3.5 border-b border-white/10 flex items-center justify-between bg-[#1a1c22] cursor-grab active:cursor-grabbing"
+            className="p-3.5 border-b border-white/10 flex items-center justify-between bg-[#1a1c22] cursor-grab active:cursor-grabbing select-none"
           >
             <div className="flex items-center gap-2.5">
               <GripHorizontal className="w-4 h-4 text-default-500 opacity-60" />
@@ -689,10 +907,14 @@ export function AIAssistantDrawer() {
               </div>
               <div>
                 <div className="flex items-center gap-1.5">
-                  <span className="text-xs font-bold tracking-tight text-white">InvestScope AI 投资顾问</span>
+                  <span className="text-xs font-bold tracking-tight text-white">
+                    {selectedMode === "general" ? "InvestScope 通用智能助手" : "InvestScope AI 投资顾问"}
+                  </span>
                   <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
                 </div>
-                <span className="text-[10px] text-default-400">时间+持仓死锁 · 智能上下文压缩</span>
+                <span className="text-[10px] text-default-400">
+                  {selectedMode === "general" ? "全领域通用 · 编程创作 · 逻辑推理" : "持仓死锁 · 智能压缩 · 红利决策"}
+                </span>
               </div>
             </div>
 
@@ -733,12 +955,37 @@ export function AIAssistantDrawer() {
 
           {!isMinimized && (
             <>
-              {/* 模型选择器栏 */}
-              <div className="px-3.5 py-2 bg-[#16181f] border-b border-white/5 flex items-center justify-between text-xs">
-                <div className="flex items-center gap-1.5 text-default-400 text-[11px]">
-                  <Cpu className="w-3.5 h-3.5 text-primary" />
-                  <span>AI 模型:</span>
+              {/* 模式切换与模型选择器栏 */}
+              <div className="px-3.5 py-2 bg-[#16181f] border-b border-white/5 flex items-center justify-between gap-2 text-xs">
+                {/* 双模式切换 Pills */}
+                <div className="flex items-center p-0.5 bg-[#101114] rounded-lg border border-white/5">
+                  <button
+                    type="button"
+                    onClick={() => handleModeChange("finance")}
+                    className={`px-2.5 py-1 rounded-md text-[11px] font-medium transition-all flex items-center gap-1 ${
+                      selectedMode === "finance"
+                        ? "bg-primary/20 text-primary border border-primary/30 shadow-xs"
+                        : "text-default-400 hover:text-white"
+                    }`}
+                  >
+                    <Briefcase className="w-3 h-3" />
+                    <span>理财专业</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => handleModeChange("general")}
+                    className={`px-2.5 py-1 rounded-md text-[11px] font-medium transition-all flex items-center gap-1 ${
+                      selectedMode === "general"
+                        ? "bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 shadow-xs"
+                        : "text-default-400 hover:text-white"
+                    }`}
+                  >
+                    <Globe className="w-3 h-3" />
+                    <span>通识全能</span>
+                  </button>
                 </div>
+
+                {/* 模型选择下拉 */}
                 <div className="relative">
                   <select
                     value={selectedModel}
@@ -747,7 +994,7 @@ export function AIAssistantDrawer() {
                   >
                     {AVAILABLE_MODELS.map((m) => (
                       <option key={m.id} value={m.id} className="bg-[#1a1c22] text-white">
-                        {m.name} ({m.tag})
+                        {m.name}
                       </option>
                     ))}
                   </select>
@@ -795,8 +1042,8 @@ export function AIAssistantDrawer() {
                 </div>
               ) : (
                 <>
-                  {/* 消息列表视图 */}
-                  <div className="flex-1 p-4 overflow-y-auto space-y-3.5 text-xs bg-[#121316]">
+                  {/* 消息列表视图 (支持自由选中复制) */}
+                  <div className="flex-1 p-4 overflow-y-auto space-y-3.5 text-xs bg-[#121316] select-text selection:bg-primary/30 selection:text-white">
                     {messages.map((msg, idx) => {
                       const isUser = msg.role === "user";
                       const isLastAssistant = !isUser && idx === messages.length - 1;
@@ -807,23 +1054,35 @@ export function AIAssistantDrawer() {
                           className={`flex gap-2.5 ${isUser ? "justify-end" : "justify-start"}`}
                         >
                           {!isUser && (
-                            <div className="w-6 h-6 rounded-full bg-primary/20 text-primary flex items-center justify-center shrink-0 mt-0.5">
+                            <div className="w-6 h-6 rounded-full bg-primary/20 text-primary flex items-center justify-center shrink-0 mt-0.5 select-none">
                               <Bot className="w-3.5 h-3.5" />
                             </div>
                           )}
 
-                          <div className="group relative max-w-[85%]">
+                          <div className="group relative max-w-[85%] select-text">
                             <div
-                              className={`p-3 rounded-2xl leading-relaxed ${
+                              className={`p-3 rounded-2xl leading-relaxed select-text ${
                                 isUser
-                                  ? "bg-primary text-primary-foreground rounded-tr-xs shadow-md whitespace-pre-wrap"
+                                  ? "bg-primary text-primary-foreground rounded-tr-xs shadow-md whitespace-pre-wrap font-normal"
                                   : "bg-[#1c1e24] text-gray-100 border border-white/10 rounded-tl-xs shadow-md"
                               }`}
                             >
+                              {msg.images && msg.images.length > 0 && (
+                                <div className="mb-2 space-y-1.5">
+                                  {msg.images.map((imgUrl, imgIdx) => (
+                                    <img
+                                      key={imgIdx}
+                                      src={imgUrl}
+                                      alt="Uploaded asset"
+                                      className="max-h-48 max-w-full rounded-xl object-contain border border-white/15 shadow-sm"
+                                    />
+                                  ))}
+                                </div>
+                              )}
                               {isUser ? (
                                 msg.content
                               ) : (
-                                <FormattedMarkdown content={msg.content} />
+                                <FormattedMarkdown content={msg.content} onActionSuccess={handleActionSuccess} />
                               )}
                               {isLastAssistant && loading && (
                                 <span className="inline-block w-1.5 h-3.5 ml-1 bg-emerald-400 animate-pulse align-middle" />
@@ -876,6 +1135,54 @@ export function AIAssistantDrawer() {
                     </div>
                   )}
 
+                  {/* 即时 8 秒撤回 Toast 浮条 */}
+                  {undoToast && (
+                    <div className="mx-3 my-1.5 p-2 rounded-xl bg-[#1c2333] border border-emerald-500/40 shadow-xl flex items-center justify-between animate-fade-in">
+                      <div className="flex items-center gap-2 text-emerald-400 text-[11px] min-w-0 pr-2">
+                        <CheckCircle2 className="w-4 h-4 shrink-0" />
+                        <span className="truncate font-medium">{undoToast.message}</span>
+                      </div>
+                      {undoToast.rollbackIds?.length ? (
+                        <button
+                          type="button"
+                          onClick={handleUndo}
+                          className="px-2 py-0.5 rounded-md bg-white/10 hover:bg-rose-500/25 text-gray-200 hover:text-rose-300 border border-white/15 hover:border-rose-500/30 text-[10px] font-semibold transition-all flex items-center gap-1 shrink-0 cursor-pointer"
+                        >
+                          <RotateCcw className="w-3 h-3" />
+                          <span>8s内撤回</span>
+                        </button>
+                      ) : null}
+                    </div>
+                  )}
+
+                  {/* 上传图片预览栏 */}
+                  {selectedImage && (
+                    <div className="px-3.5 py-2 bg-[#181a22] border-t border-white/10 flex items-center justify-between animate-fade-in">
+                      <div className="flex items-center gap-2.5 min-w-0">
+                        <img
+                          src={selectedImage}
+                          alt="Preview"
+                          className="w-10 h-10 object-cover rounded-lg border border-primary/50 shadow-xs shrink-0"
+                        />
+                        <div className="min-w-0">
+                          <div className="text-[11px] font-medium text-white flex items-center gap-1">
+                            <Sparkles className="w-3 h-3 text-amber-400 shrink-0" />
+                            <span>已附加截图 / 图片</span>
+                          </div>
+                          <div className="text-[10px] text-default-400 truncate">支持持仓交割单 OCR、K 线图或财报解析</div>
+                        </div>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => setSelectedImage(null)}
+                        className="p-1 rounded-md text-default-400 hover:text-rose-400 hover:bg-white/10 transition-colors shrink-0 ml-2"
+                        title="移除图片"
+                      >
+                        <X className="w-4 h-4" />
+                      </button>
+                    </div>
+                  )}
+
                   {/* 输入框区域 */}
                   <div className="p-3 border-t border-white/10 bg-[#141519]">
                     <form
@@ -885,21 +1192,51 @@ export function AIAssistantDrawer() {
                       }}
                       className="flex items-center gap-2"
                     >
+                      {/* 隐藏的图片文件上传 input */}
+                      <input
+                        type="file"
+                        ref={fileInputRef}
+                        onChange={handleFileChange}
+                        accept="image/*"
+                        className="hidden"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => fileInputRef.current?.click()}
+                        title="上传图片或截图 (支持直接 Ctrl+V 粘贴)"
+                        className="p-2 rounded-xl text-default-400 hover:text-primary hover:bg-white/5 transition-all shrink-0 cursor-pointer"
+                      >
+                        <ImageIcon className="w-4 h-4" />
+                      </button>
+
                       <input
                         type="text"
                         value={input}
                         onChange={(e) => setInput(e.target.value)}
-                        placeholder="问问 AI：诊断持仓 / 股票排雷 / 资金建议..."
+                        onPaste={handlePaste}
+                        placeholder={selectedMode === "general" ? "输入问题或按 Ctrl+V 粘贴图片..." : "问问 AI 或粘贴持仓/行情截图..."}
                         disabled={loading}
                         className="flex-1 px-3 py-2 rounded-xl bg-[#202229] text-xs text-white placeholder:text-gray-400 border border-white/10 focus:border-primary focus:outline-none"
                       />
-                      <button
-                        type="submit"
-                        disabled={!input.trim() || loading}
-                        className="p-2 rounded-xl bg-primary text-primary-foreground disabled:opacity-40 hover:scale-105 transition-all shrink-0"
-                      >
-                        {loading ? <RefreshCw className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}
-                      </button>
+                      {loading ? (
+                        <button
+                          type="button"
+                          onClick={handleStop}
+                          title="终止生成"
+                          className="px-3 py-2 rounded-xl bg-rose-500/20 text-rose-400 hover:bg-rose-500/30 border border-rose-500/30 transition-all shrink-0 flex items-center gap-1.5 text-xs font-medium cursor-pointer"
+                        >
+                          <Square className="w-3.5 h-3.5 fill-current" />
+                          <span>停止</span>
+                        </button>
+                      ) : (
+                        <button
+                          type="submit"
+                          disabled={(!input.trim() && !selectedImage) || loading}
+                          className="p-2 rounded-xl bg-primary text-primary-foreground disabled:opacity-40 hover:scale-105 transition-all shrink-0 cursor-pointer"
+                        >
+                          <Send className="w-4 h-4" />
+                        </button>
+                      )}
                     </form>
                   </div>
                 </>

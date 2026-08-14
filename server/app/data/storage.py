@@ -11,10 +11,13 @@ class StorageDB:
         self._init_db()
 
     def _get_conn(self):
-        return sqlite3.connect(self.db_path)
+        conn = sqlite3.connect(self.db_path, timeout=30.0)
+        return conn
 
     def _init_db(self):
         with self._get_conn() as conn:
+            conn.execute("PRAGMA journal_mode=WAL;")
+            conn.execute("PRAGMA synchronous=NORMAL;")
             cursor = conn.cursor()
             # 用户表
             cursor.execute("""
@@ -118,6 +121,22 @@ class StorageDB:
             cursor.execute("CREATE INDEX IF NOT EXISTS idx_chat_sessions_user_id ON chat_sessions(user_id)")
             cursor.execute("CREATE INDEX IF NOT EXISTS idx_chat_messages_session_id ON chat_messages(session_id)")
 
+            # 资产变更与审计日志流水表 (支持全链路追溯与一键时光机回滚)
+            cursor.execute("""
+            CREATE TABLE IF NOT EXISTS asset_audit_logs (
+                id          INTEGER PRIMARY KEY AUTOINCREMENT,
+                user_id     TEXT NOT NULL,
+                asset_id    INTEGER,
+                action      TEXT NOT NULL, -- 'CREATE' | 'UPDATE' | 'DELETE' | 'BATCH_IMPORT' | 'ROLLBACK'
+                source      TEXT NOT NULL DEFAULT 'MANUAL', -- 'MANUAL' | 'AI_OCR' | 'AI_CHAT' | 'ROLLBACK'
+                description TEXT,
+                before_data TEXT,          -- JSON 快照
+                after_data  TEXT,          -- JSON 快照
+                created_at  TEXT NOT NULL DEFAULT (datetime('now'))
+            )
+            """)
+            cursor.execute("CREATE INDEX IF NOT EXISTS idx_asset_audit_user ON asset_audit_logs(user_id)")
+
             conn.commit()
 
     # ─── 资产管理 (多品类 & 按用户隔离) ───────────────────────────
@@ -132,7 +151,8 @@ class StorageDB:
             rows = cursor.fetchall()
             return [dict(row) for row in rows]
 
-    def add_asset(self, user_id: str, data: Dict[str, Any]) -> int:
+    def add_asset(self, user_id: str, data: Dict[str, Any], source: str = "MANUAL", description: str = "手动添加资产") -> int:
+        import json
         with self._get_conn() as conn:
             cursor = conn.cursor()
             cursor.execute("""
@@ -154,12 +174,31 @@ class StorageDB:
                 data.get("fund_type"),
                 data.get("notes"),
             ))
-            conn.commit()
-            return cursor.lastrowid
+            asset_id = cursor.lastrowid
+            
+            # 记录审计日志
+            after_snapshot = json.dumps({**data, "id": asset_id}, ensure_ascii=False)
+            cursor.execute("""
+            INSERT INTO asset_audit_logs (user_id, asset_id, action, source, description, before_data, after_data)
+            VALUES (?, ?, 'CREATE', ?, ?, NULL, ?)
+            """, (user_id, asset_id, source, description, after_snapshot))
 
-    def update_asset(self, asset_id: int, user_id: str, data: Dict[str, Any]) -> bool:
+            conn.commit()
+            return asset_id
+
+    def update_asset(self, asset_id: int, user_id: str, data: Dict[str, Any], source: str = "MANUAL") -> bool:
+        import json
         with self._get_conn() as conn:
+            conn.row_factory = sqlite3.Row
             cursor = conn.cursor()
+            
+            # 提取旧数据快照
+            cursor.execute("SELECT * FROM assets WHERE id = ? AND user_id = ?", (asset_id, user_id))
+            old_row = cursor.fetchone()
+            if not old_row:
+                return False
+            before_snapshot = json.dumps(dict(old_row), ensure_ascii=False)
+
             cursor.execute("""
             UPDATE assets SET
                 category = ?,
@@ -194,15 +233,200 @@ class StorageDB:
                 asset_id,
                 user_id
             ))
+            
+            after_snapshot = json.dumps({**dict(old_row), **data}, ensure_ascii=False)
+            cursor.execute("""
+            INSERT INTO asset_audit_logs (user_id, asset_id, action, source, description, before_data, after_data)
+            VALUES (?, ?, 'UPDATE', ?, ?, ?, ?)
+            """, (user_id, asset_id, source, f"修改资产【{data.get('name', '')}】", before_snapshot, after_snapshot))
+
             conn.commit()
             return cursor.rowcount > 0
 
-    def delete_asset(self, asset_id: int, user_id: str) -> bool:
+    def delete_asset(self, asset_id: int, user_id: str, source: str = "MANUAL") -> bool:
+        import json
         with self._get_conn() as conn:
+            conn.row_factory = sqlite3.Row
             cursor = conn.cursor()
+            
+            cursor.execute("SELECT * FROM assets WHERE id = ? AND user_id = ?", (asset_id, user_id))
+            old_row = cursor.fetchone()
+            if not old_row:
+                return False
+            before_snapshot = json.dumps(dict(old_row), ensure_ascii=False)
+            asset_name = old_row["name"]
+
             cursor.execute("DELETE FROM assets WHERE id = ? AND user_id = ?", (asset_id, user_id))
+            
+            cursor.execute("""
+            INSERT INTO asset_audit_logs (user_id, asset_id, action, source, description, before_data, after_data)
+            VALUES (?, ?, 'DELETE', ?, ?, ?, NULL)
+            """, (user_id, asset_id, source, f"删除资产【{asset_name}】", before_snapshot))
+
             conn.commit()
             return cursor.rowcount > 0
+
+    def batch_add_assets(self, user_id: str, items: List[Dict[str, Any]], source: str = "AI_OCR", description: str = "AI 识别批量录入") -> List[int]:
+        import json
+        created_ids = []
+        with self._get_conn() as conn:
+            cursor = conn.cursor()
+            created_records = []
+            for data in items:
+                cursor.execute("""
+                INSERT INTO assets (user_id, category, name, code, amount, shares, cost_price, annual_rate, deposit_type, start_date, maturity_date, payout_method, fund_type, notes)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """, (
+                    user_id,
+                    data.get("category"),
+                    data.get("name"),
+                    data.get("code"),
+                    float(data["amount"]) if data.get("amount") is not None else None,
+                    float(data["shares"]) if data.get("shares") is not None else None,
+                    float(data["cost_price"]) if data.get("cost_price") is not None else None,
+                    float(data["annual_rate"]) if data.get("annual_rate") is not None else None,
+                    data.get("deposit_type"),
+                    data.get("start_date"),
+                    data.get("maturity_date"),
+                    data.get("payout_method"),
+                    data.get("fund_type"),
+                    data.get("notes"),
+                ))
+                aid = cursor.lastrowid
+                created_ids.append(aid)
+                created_records.append({**data, "id": aid})
+
+            after_snapshot = json.dumps(created_records, ensure_ascii=False)
+            cursor.execute("""
+            INSERT INTO asset_audit_logs (user_id, asset_id, action, source, description, before_data, after_data)
+            VALUES (?, NULL, 'BATCH_IMPORT', ?, ?, NULL, ?)
+            """, (user_id, source, f"{description} (共 {len(created_ids)} 笔)", after_snapshot))
+
+            conn.commit()
+        return created_ids
+
+    def batch_delete_assets(self, user_id: str, asset_ids: List[int], source: str = "ROLLBACK") -> bool:
+        if not asset_ids:
+            return True
+        import json
+        with self._get_conn() as conn:
+            conn.row_factory = sqlite3.Row
+            cursor = conn.cursor()
+            placeholders = ",".join("?" for _ in asset_ids)
+            cursor.execute(f"SELECT * FROM assets WHERE id IN ({placeholders}) AND user_id = ?", (*asset_ids, user_id))
+            rows = cursor.fetchall()
+            if not rows:
+                return False
+            before_snapshot = json.dumps([dict(r) for r in rows], ensure_ascii=False)
+
+            cursor.execute(f"DELETE FROM assets WHERE id IN ({placeholders}) AND user_id = ?", (*asset_ids, user_id))
+            
+            cursor.execute("""
+            INSERT INTO asset_audit_logs (user_id, asset_id, action, source, description, before_data, after_data)
+            VALUES (?, NULL, 'DELETE', ?, ?, ?, NULL)
+            """, (user_id, source, f"批量撤销/删除资产 (共 {len(rows)} 笔)", before_snapshot))
+
+            conn.commit()
+        return True
+
+    def get_asset_audit_logs(self, user_id: str, limit: int = 50) -> List[Dict[str, Any]]:
+        with self._get_conn() as conn:
+            conn.row_factory = sqlite3.Row
+            cursor = conn.cursor()
+            cursor.execute("""
+            SELECT * FROM asset_audit_logs 
+            WHERE user_id = ? 
+            ORDER BY id DESC 
+            LIMIT ?
+            """, (user_id, limit))
+            rows = cursor.fetchall()
+            return [dict(r) for r in rows]
+
+    def rollback_asset_action(self, user_id: str, log_id: int) -> Dict[str, Any]:
+        import json
+        with self._get_conn() as conn:
+            conn.row_factory = sqlite3.Row
+            cursor = conn.cursor()
+            cursor.execute("SELECT * FROM asset_audit_logs WHERE id = ? AND user_id = ?", (log_id, user_id))
+            log = cursor.fetchone()
+            if not log:
+                return {"status": "error", "message": "审计日志不存在"}
+
+            action = log["action"]
+            before_data = json.loads(log["before_data"]) if log["before_data"] else None
+            after_data = json.loads(log["after_data"]) if log["after_data"] else None
+
+            if action in ("CREATE", "BATCH_IMPORT"):
+                # 回滚创建/批量导入 -> 删除对应资产
+                if isinstance(after_data, list):
+                    ids = [item.get("id") for item in after_data if item.get("id")]
+                elif isinstance(after_data, dict) and after_data.get("id"):
+                    ids = [after_data["id"]]
+                else:
+                    ids = [log["asset_id"]] if log["asset_id"] else []
+
+                if ids:
+                    placeholders = ",".join("?" for _ in ids)
+                    cursor.execute(f"DELETE FROM assets WHERE id IN ({placeholders}) AND user_id = ?", (*ids, user_id))
+                
+                cursor.execute("""
+                INSERT INTO asset_audit_logs (user_id, asset_id, action, source, description, before_data, after_data)
+                VALUES (?, ?, 'ROLLBACK', 'ROLLBACK', ?, ?, NULL)
+                """, (user_id, log["asset_id"], f"回滚操作: 撤销【{log['description']}】", log["after_data"]))
+
+            elif action == "DELETE":
+                # 回滚删除 -> 恢复被删数据
+                items_to_restore = before_data if isinstance(before_data, list) else ([before_data] if before_data else [])
+                for data in items_to_restore:
+                    cursor.execute("""
+                    INSERT INTO assets (id, user_id, category, name, code, amount, shares, cost_price, annual_rate, deposit_type, start_date, maturity_date, payout_method, fund_type, notes)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    """, (
+                        data.get("id"),
+                        user_id,
+                        data.get("category"),
+                        data.get("name"),
+                        data.get("code"),
+                        data.get("amount"),
+                        data.get("shares"),
+                        data.get("cost_price"),
+                        data.get("annual_rate"),
+                        data.get("deposit_type"),
+                        data.get("start_date"),
+                        data.get("maturity_date"),
+                        data.get("payout_method"),
+                        data.get("fund_type"),
+                        data.get("notes"),
+                    ))
+                cursor.execute("""
+                INSERT INTO asset_audit_logs (user_id, asset_id, action, source, description, before_data, after_data)
+                VALUES (?, ?, 'ROLLBACK', 'ROLLBACK', ?, NULL, ?)
+                """, (user_id, log["asset_id"], f"回滚操作: 恢复【{log['description']}】", log["before_data"]))
+
+            elif action == "UPDATE":
+                # 回滚修改 -> 恢复修改前的值
+                if before_data and before_data.get("id"):
+                    data = before_data
+                    cursor.execute("""
+                    UPDATE assets SET
+                        category = ?, name = ?, code = ?, amount = ?, shares = ?, cost_price = ?,
+                        annual_rate = ?, deposit_type = ?, start_date = ?, maturity_date = ?,
+                        payout_method = ?, fund_type = ?, notes = ?, updated_at = datetime('now')
+                    WHERE id = ? AND user_id = ?
+                    """, (
+                        data.get("category"), data.get("name"), data.get("code"),
+                        data.get("amount"), data.get("shares"), data.get("cost_price"),
+                        data.get("annual_rate"), data.get("deposit_type"), data.get("start_date"),
+                        data.get("maturity_date"), data.get("payout_method"), data.get("fund_type"),
+                        data.get("notes"), data.get("id"), user_id
+                    ))
+                    cursor.execute("""
+                    INSERT INTO asset_audit_logs (user_id, asset_id, action, source, description, before_data, after_data)
+                    VALUES (?, ?, 'ROLLBACK', 'ROLLBACK', ?, ?, ?)
+                    """, (user_id, log["asset_id"], f"回滚操作: 恢复【{data.get('name')}】为修改前数据", log["after_data"], log["before_data"]))
+
+            conn.commit()
+            return {"status": "ok", "message": "回滚成功"}
 
     # ─── 用户 ───────────────────────────────────────────────────
 
