@@ -174,25 +174,85 @@ class DividendCalendarService:
                 except Exception as e:
                     logger.debug(f"解析 {code} 分红记录出错: {e}")
 
-        # ─── 3. 真实定期存款与理财利息（严格依据到期日） ───────────────
-        fixed_assets = [a for a in raw_assets if a.get("category") in ("DEPOSIT", "WEALTH")]
+        # ─── 3. 真实定期存款与理财利息（支持到期/按月/按季/按年派息） ──────
+        fixed_assets = [
+            a for a in raw_assets
+            if a.get("category") in ("DEPOSIT", "WEALTH") or a.get("deposit_type") or a.get("annual_rate")
+        ]
+
         for asset in fixed_assets:
-            name = asset.get("name") or "定期存款"
+            name = asset.get("name") or "定期存款/理财"
             principal = float(asset.get("amount") or 0.0)
-            rate = float(asset.get("rate") or 0.0)
+            rate = float(asset.get("annual_rate") or asset.get("rate") or 0.0)
             mat_str = asset.get("maturity_date")
+            payout_mode = str(asset.get("payout_method") or "MATURITY").upper()
 
             if principal <= 0 or rate <= 0:
                 continue
 
             annual_interest = round(principal * (rate / 100.0), 2)
+            source_contributions[name] = source_contributions.get(name, 0.0) + annual_interest
 
-            # 若有明确到期日且在未来 12 个月内
+            # 解析到期日
+            mat_dt = None
             if mat_str:
                 try:
-                    mat_dt = datetime.datetime.strptime(str(mat_str).strip(), "%Y-%m-%d").date()
+                    mat_dt = datetime.datetime.strptime(str(mat_str).strip()[:10], "%Y-%m-%d").date()
+                except Exception:
+                    pass
+
+            # 场景 A: 按月派息 (MONTHLY)
+            if payout_mode == "MONTHLY":
+                monthly_payout = round(annual_interest / 12.0, 2)
+                for m in months_list:
+                    event = {
+                        "id": f"evt-dep-{asset.get('id', 'dep')}-{m}",
+                        "month": m,
+                        "date": f"{m}-15",
+                        "assetType": "DEPOSIT_INTEREST",
+                        "symbol": None,
+                        "name": name,
+                        "amount": monthly_payout,
+                        "principal": principal,
+                        "interestRate": rate,
+                        "description": f"{name} 月度利息到账 (本金 ¥{principal:,.0f}，年化 {rate}%，月息 ¥{monthly_payout:,.2f})",
+                        "status": "CONTRACTUAL",
+                        "statusLabel": "按月结息",
+                    }
+                    all_events.append(event)
+                    monthly_buckets[m]["events"].append(event)
+                    monthly_buckets[m]["depositInterest"] += monthly_payout
+                    monthly_buckets[m]["totalCashflow"] += monthly_payout
+
+            # 场景 B: 按季派息 (QUARTERLY)
+            elif payout_mode == "QUARTERLY":
+                quarterly_payout = round(annual_interest / 4.0, 2)
+                for idx, m in enumerate(months_list):
+                    if (idx + 1) % 3 == 0:
+                        event = {
+                            "id": f"evt-dep-{asset.get('id', 'dep')}-{m}",
+                            "month": m,
+                            "date": f"{m}-20",
+                            "assetType": "DEPOSIT_INTEREST",
+                            "symbol": None,
+                            "name": name,
+                            "amount": quarterly_payout,
+                            "principal": principal,
+                            "interestRate": rate,
+                            "description": f"{name} 季度利息结息 (本金 ¥{principal:,.0f}，年化 {rate}%，季息 ¥{quarterly_payout:,.2f})",
+                            "status": "CONTRACTUAL",
+                            "statusLabel": "按季结息",
+                        }
+                        all_events.append(event)
+                        monthly_buckets[m]["events"].append(event)
+                        monthly_buckets[m]["depositInterest"] += quarterly_payout
+                        monthly_buckets[m]["totalCashflow"] += quarterly_payout
+
+            # 场景 C: 到期一次性付息还本 (MATURITY / ANNUAL)
+            else:
+                if mat_dt and mat_dt >= today_date:
                     mat_month = mat_dt.strftime("%Y-%m")
-                    if mat_month in monthly_buckets and mat_dt >= today_date:
+                    if mat_month in monthly_buckets:
                         event = {
                             "id": f"evt-dep-{asset.get('id', 'dep')}-{mat_month}",
                             "month": mat_month,
@@ -203,7 +263,7 @@ class DividendCalendarService:
                             "amount": annual_interest,
                             "principal": principal,
                             "interestRate": rate,
-                            "description": f"{name} 到期还本结息 (本金 ¥{principal:,.0f}，利息 ¥{annual_interest:,.2f})",
+                            "description": f"{name} 到期还本结息 (本金 ¥{principal:,.0f}，年化 {rate}%，利息 ¥{annual_interest:,.2f})",
                             "status": "CONTRACTUAL",
                             "statusLabel": "合同到期结息",
                         }
@@ -213,8 +273,6 @@ class DividendCalendarService:
                         monthly_buckets[mat_month]["totalCashflow"] += annual_interest
 
                         source_contributions[name] = source_contributions.get(name, 0.0) + annual_interest
-                except Exception:
-                    pass
 
         # ─── 4. 统计汇总与财务自由覆盖度 ──────────────────────────────
         monthly_series = []
