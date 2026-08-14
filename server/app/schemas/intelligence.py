@@ -43,7 +43,7 @@ class IntelligencePayload(BaseModel):
     created_at: str = Field(default_factory=lambda: datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S"))
 
 class UserSubscriptionConfig(BaseModel):
-    user_id: str
+    user_id: Optional[str] = None
     enable_morning_radar: bool = True
     enable_closing_review: bool = True
     enable_sentinel_alert: bool = True

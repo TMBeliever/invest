@@ -170,15 +170,32 @@ export function NotificationSettings() {
       });
 
       if (res.ok) {
-        setToastMessage({ text: `🎉 成功向 ${channel} 发送测试消息！请在对应平台查收。`, type: "success" });
-        setTimeout(() => setToastMessage(null), 4000);
+        // 自动将测试成功的渠道勾选并持久化保存，使后台双向对话立即生效
+        const updatedChannels = form.channel_types.includes(channel)
+          ? form.channel_types
+          : [...form.channel_types, channel];
+        const updatedForm = { ...form, channel_types: updatedChannels };
+        setForm(updatedForm);
+
+        // 自动保存
+        fetch(`${API_BASE}/api/intelligence/subscription`, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${token}`,
+          },
+          body: JSON.stringify(updatedForm),
+        });
+
+        setToastMessage({ text: `🎉 成功向 ${channel} 发送测试消息并已自动保存配置！Bot 双向交互已实时激活。`, type: "success" });
+        setTimeout(() => setToastMessage(null), 5000);
       } else {
-        const err = await res.json();
+        const err = await res.json().catch(() => ({ detail: `HTTP ${res.status} 服务异常` }));
         setToastMessage({ text: `❌ 发送失败: ${err.detail || "接口异常"}`, type: "error" });
-        setTimeout(() => setToastMessage(null), 4000);
+        setTimeout(() => setToastMessage(null), 6000);
       }
-    } catch (e) {
-      setToastMessage({ text: `测试异常: ${e}`, type: "error" });
+    } catch (e: any) {
+      setToastMessage({ text: `测试异常: ${e.message || e}`, type: "error" });
     } finally {
       setTestingChannel(null);
     }

@@ -226,6 +226,8 @@ async def test_push_notification(
     【一键发送测试卡片】验证飞书 / 企微 / 邮箱 / Telegram 连通性。
     """
     now_str = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    target_display = str(req.target_url_or_email or req.telegram_chat_id or "已绑定目标")
+
     test_payload = IntelligencePayload(
         id=f"test-{datetime.datetime.now().timestamp()}",
         report_type=ReportType.SENTINEL_ALERT,
@@ -236,7 +238,7 @@ async def test_push_notification(
         markdown_content="""### 🚀 决策中台连通性测试
 - **测试用户**：`""" + current_user.get("username", "Owner") + """`
 - **推送通道**：`""" + req.channel.upper() + """`
-- **目标地址**：`""" + req.target_url_or_email + """`
+- **目标地址**：`""" + target_display + """`
 - **测试时间**：""" + now_str + """
 
 #### 🎯 后续将为您自动推送：
@@ -270,14 +272,22 @@ async def test_push_notification(
 
     adapter = dispatch_router.adapters.get(channel_key)
     if not adapter:
-        raise HTTPException(status_code=400, detail=f"Unsupported channel: {req.channel}")
+        raise HTTPException(status_code=400, detail=f"不支持的推送渠道: {req.channel}")
 
-    ok = await adapter.send(test_payload, target_config)
+    try:
+        ok = await adapter.send(test_payload, target_config)
+    except Exception as e:
+        logger.error(f"测试推送发生异常: {e}")
+        raise HTTPException(status_code=400, detail=f"推送发送异常: {str(e)}")
+
     if not ok:
-        raise HTTPException(status_code=500, detail=f"Failed to send test message to {req.channel}. Please check URL or network.")
+        raise HTTPException(
+            status_code=400,
+            detail=f"向 {req.channel} 发送测试消息失败，请检查 Bot Token、Chat ID 是否正确，或您是否已在 TG 中向该 Bot 发送过 /start 进行激活！"
+        )
 
     return {
         "success": True,
-        "message": f"Test message sent successfully to {req.channel}!",
+        "message": f"测试消息已成功发送至 {req.channel}！",
         "channel": req.channel
     }

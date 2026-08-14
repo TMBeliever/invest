@@ -705,6 +705,21 @@ class StorageDB:
             conn.commit()
             return cursor.rowcount > 0
 
+    def get_or_create_gateway_session(self, user_id: str, platform: str, chat_id: str) -> str:
+        """获取或创建外部平台（如 Telegram / 飞书）对应的持久化多轮对话 Session"""
+        session_title = f"{platform}:{chat_id}"
+        with self._get_conn() as conn:
+            conn.row_factory = sqlite3.Row
+            cursor = conn.cursor()
+            cursor.execute(
+                "SELECT id FROM chat_sessions WHERE user_id = ? AND title = ? ORDER BY updated_at DESC LIMIT 1",
+                (user_id, session_title)
+            )
+            row = cursor.fetchone()
+            if row:
+                return row["id"]
+        return self.create_chat_session(user_id, session_title)
+
     def get_session_messages(self, session_id: str) -> List[Dict[str, Any]]:
         with self._get_conn() as conn:
             conn.row_factory = sqlite3.Row

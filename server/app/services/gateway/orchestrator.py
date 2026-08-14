@@ -91,25 +91,25 @@ class AgentGatewayOrchestrator:
         effective_user_id = user["id"] if user else "default"
         username = user.get("username", "投资人") if user else "投资人"
 
-        # 2. 快捷指令快速通道 (Slash Commands Fast-Path)
-        cmd = raw_text.split()[0].lower() if raw_text.startswith("/") else ""
+        # 2. 快捷指令与自然语言意图直达 (Slash Commands & Fast Intents)
+        cleaned_lower = raw_text.lower().replace(" ", "").replace("请", "").replace("帮我", "").replace("获取", "").replace("查看", "").replace("生成", "")
 
-        if cmd in ("/start", "/help"):
+        if raw_text.startswith("/start") or raw_text.startswith("/help") or cleaned_lower in ("help", "帮助", "菜单", "指南", "你是谁"):
             return self._handle_help(msg, username)
 
-        elif cmd == "/summary":
+        elif raw_text.startswith("/summary") or cleaned_lower in ("summary", "资产", "总览", "持仓", "查账", "收益", "我的资产", "持仓总览"):
             return await self._handle_summary(msg, effective_user_id)
 
-        elif cmd == "/xray":
+        elif raw_text.startswith("/xray") or cleaned_lower in ("xray", "x光", "体检", "透视", "持仓体检", "行业穿透", "诊断"):
             return await self._handle_xray(msg, effective_user_id)
 
-        elif cmd == "/alerts":
+        elif raw_text.startswith("/alerts") or cleaned_lower in ("alerts", "预警", "哨兵", "风险", "风控", "持仓预警", "持仓风险"):
             return await self._handle_alerts(msg, effective_user_id)
 
-        elif cmd == "/morning":
+        elif raw_text.startswith("/morning") or any(k in cleaned_lower for k in ["早报", "早盘", "早盘前瞻", "今日早报"]):
             return await self._handle_morning(msg)
 
-        elif cmd == "/closing":
+        elif raw_text.startswith("/closing") or any(k in cleaned_lower for k in ["收盘", "复盘", "收盘复盘", "今日复盘", "晚报"]):
             return await self._handle_closing(msg)
 
         # 3. 股票/代码直接查询快速通道 (如用户直接输入 "招商银行" 或 "600036")
@@ -363,33 +363,34 @@ class AgentGatewayOrchestrator:
         )
 
     async def _handle_agent_chat(self, msg: InboundMessage, query: str, user_id: str, username: str) -> OutboundResponse:
-        """运行完整 Agent 工具调度思考循环 (Tool-Calling Loop)"""
+        """运行完整 Agent 工具调度思考循环 (Tool-Calling Loop 与多轮记忆)"""
+        from app.api.ai import _build_system_prompt
+
         llm = get_llm_provider()
-        now_str = asyncio.get_event_loop().time()
+        system_prompt = _build_system_prompt(user_id=user_id, user_query=query, mode="finance")
 
-        system_prompt = f"""你是一名精通个人资产配置、组合风险穿透与高股息量化策略的【InvestScope 智能 AI 投资顾问】。
-当前对话用户: {username} (ID: {user_id})
-
-[核心要求]:
-1. 你拥有完整的系统级实时量化工具库（Tools）：
-   - `get_portfolio_xray()`: 获取用户当前全部真实资产的【全景 X 光透视体检报告】
-   - `get_portfolio_summary()`: 获取用户当前资产净值概况、持仓总浮盈、预估年现金流收益与资产清单
-   - `get_active_risk_alerts()`: 获取用户持仓活跃的风险预警与 3 套应对方案
-   - `get_stock_quote(symbol)`: 获取单只股票或ETF盘中秒级实时行情与股息率
-   - `get_financial_analysis(symbol)`: 获取官方财报体检、杜邦 ROE 拆解与 4 大排雷指标
-   - `get_stock_news(symbol)`: 获取最新资讯与分红公告
-   - `compare_stocks(symbols)`: 多股横向对比矩阵
-2. 当用户的提问涉及持仓、体检、个股行情、对比或宏观推演时，请主动调用工具获取真实数据后再作答！
-3. 回答排版简洁优美，多用 Markdown 列表、加粗与重点标记，适合在手机聊天窗口阅读。"""
+        # 1. 调取或创建当前会话的上下文记忆
+        session_id = storage_db.get_or_create_gateway_session(user_id, msg.platform.value, msg.chat_id)
+        history_rows = storage_db.get_session_messages(session_id)
+        
+        # 保留最近 8 轮对话上下文
+        messages = []
+        for r in history_rows[-8:]:
+            messages.append({"role": r["role"], "content": r["content"]})
+        messages.append({"role": "user", "content": query})
 
         try:
             full_response = await asyncio.to_thread(
                 llm.chat_complete,
-                messages=[{"role": "user", "content": query}],
+                messages=messages,
                 system_prompt=system_prompt,
                 user_id=user_id,
                 enable_tools=True
             )
+
+            # 持久化用户提问与 AI 回答到数据库
+            storage_db.add_chat_message(session_id, "user", query)
+            storage_db.add_chat_message(session_id, "assistant", full_response)
 
             html_content = self._markdown_to_telegram_html(full_response)
             return OutboundResponse(
