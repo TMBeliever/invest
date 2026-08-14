@@ -847,6 +847,26 @@ export function AIAssistantDrawer() {
     }
   };
 
+  // 监听全局一键呼叫 AI 助手的事件 (如从 X-Ray 看板一键呼叫)
+  useEffect(() => {
+    const handleOpenAIAssistant = (e: Event) => {
+      const customEvent = e as CustomEvent<{ prompt?: string }>;
+      setIsOpen(true);
+      setIsMinimized(false);
+      const prompt = customEvent.detail?.prompt;
+      if (prompt) {
+        setTimeout(() => {
+          handleSend(prompt);
+        }, 200);
+      }
+    };
+
+    window.addEventListener("open-ai-assistant", handleOpenAIAssistant);
+    return () => {
+      window.removeEventListener("open-ai-assistant", handleOpenAIAssistant);
+    };
+  }, [currentSessionId, selectedModel, selectedMode, messages]);
+
   const handleCopy = (id: string, text: string) => {
     navigator.clipboard.writeText(text);
     setCopiedId(id);

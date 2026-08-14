@@ -5,7 +5,7 @@ import { apiClient } from "@investscope/core";
 import type { AIDiagnose } from "@investscope/data/schemas";
 import { Sparkles, ShieldCheck, TrendingUp, AlertTriangle, RefreshCw, Bot } from "lucide-react";
 
-export function AIPortfolioCard() {
+export function AIPortfolioCard({ onViewXRay }: { onViewXRay?: () => void }) {
   const [data, setData] = useState<AIDiagnose | null>(null);
   const [loading, setLoading] = useState(false);
 
@@ -47,14 +47,24 @@ export function AIPortfolioCard() {
           </div>
         </div>
 
-        <button
-          onClick={fetchDiagnose}
-          disabled={loading}
-          className="text-xs text-default-400 hover:text-primary transition-colors flex items-center gap-1 self-start sm:self-auto"
-        >
-          <RefreshCw className={`w-3.5 h-3.5 ${loading ? "animate-spin text-primary" : ""}`} />
-          重新体检
-        </button>
+        <div className="flex items-center gap-2.5 self-start sm:self-auto">
+          {onViewXRay && (
+            <button
+              onClick={onViewXRay}
+              className="px-3 py-1.5 rounded-xl bg-primary/20 hover:bg-primary/30 text-primary border border-primary/30 text-xs font-semibold transition-all flex items-center gap-1 cursor-pointer"
+            >
+              <span>🩻 展开全景 X 光透视 ➔</span>
+            </button>
+          )}
+          <button
+            onClick={fetchDiagnose}
+            disabled={loading}
+            className="text-xs text-default-400 hover:text-primary transition-colors flex items-center gap-1 cursor-pointer"
+          >
+            <RefreshCw className={`w-3.5 h-3.5 ${loading ? "animate-spin text-primary" : ""}`} />
+            <span>刷新</span>
+          </button>
+        </div>
       </div>
 
       <div className="mt-3.5 space-y-2.5">

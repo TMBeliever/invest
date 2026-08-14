@@ -61,10 +61,22 @@ def _enrich_assets(raw_assets: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
     - 场外基金 (FUND + fund_type=OTC)：走每日收盘净值接口，T-1 日数据，非实时
     - 存款/理财/其他：按录入值计算
     """
+    def _is_otc_fund(a: Dict[str, Any]) -> bool:
+        if a.get("category") != "FUND":
+            return False
+        if a.get("fund_type") == "OTC":
+            return True
+        code = str(a.get("code") or "").strip()
+        if code and len(code) == 6 and code.isdigit():
+            # 沪深交易所场内上市 ETF / LOF 代码前缀: 51, 15, 56, 58, 16, 52, 50
+            if code[:2] not in ("51", "15", "56", "58", "16", "52", "50"):
+                return True
+        return False
+
     is_exchange_traded = lambda a: a["category"] == "STOCK" or (
-        a["category"] == "FUND" and (a.get("fund_type") or "EXCHANGE") != "OTC"
+        a["category"] == "FUND" and not _is_otc_fund(a)
     )
-    is_otc_fund = lambda a: a["category"] == "FUND" and a.get("fund_type") == "OTC"
+    is_otc_fund = lambda a: _is_otc_fund(a)
 
     quote_codes = [a["code"] for a in raw_assets if is_exchange_traded(a) and a.get("code")]
     quotes = _batch_tencent_quote(quote_codes) if quote_codes else {}
@@ -85,6 +97,13 @@ def _enrich_assets(raw_assets: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
             cost_price = a.get("cost_price") or 0.0
             quote = quotes.get(a.get("code")) if a.get("code") else None
 
+            # 若为基金且场内行情未查到，自动兜底尝试场外基金净值接口
+            nav_fallback = None
+            if quote is None and category == "FUND" and a.get("code"):
+                nav_fallback = get_otc_fund_nav(a["code"])
+                if nav_fallback and nav_fallback.get("navPrice"):
+                    quote = {"price": nav_fallback["navPrice"], "dividendYield": None}
+
             current_price = quote["price"] if quote else cost_price
             current_value = round(shares * current_price, 2)
             cost_value = round(shares * cost_price, 4)
@@ -100,7 +119,7 @@ def _enrich_assets(raw_assets: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
             ) else dividend_yield
 
             item.update({
-                "fundType": "EXCHANGE" if category == "FUND" else None,
+                "fundType": "EXCHANGE" if category == "FUND" and not nav_fallback else "OTC",
                 "shares": shares,
                 "costPrice": cost_price,
                 "currentPrice": current_price,
@@ -111,7 +130,8 @@ def _enrich_assets(raw_assets: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
                 "costDividendYield": cost_dividend_yield,
                 "annualIncome": annual_income,
                 "dataStale": quote is None,  # 行情拉取失败时用成本价兜底，标记给前端提示
-                "priceAsOf": "REALTIME",
+                "priceAsOf": "REALTIME" if quote and not nav_fallback else "PREV_CLOSE_NAV",
+                "navDate": nav_fallback.get("navDate") if nav_fallback else None,
             })
 
         elif is_otc_fund(a):

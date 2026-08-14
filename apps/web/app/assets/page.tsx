@@ -14,8 +14,10 @@ import {
   X,
   AlertTriangle,
   History,
+  Activity,
 } from "lucide-react";
 import { AuditLogsModal } from "../components/audit-logs-modal";
+import { XRayDashboard } from "./components/xray-dashboard";
 
 const CATEGORY_META: Record<AssetCategory, { label: string; color: string; icon: string }> = {
   DEPOSIT: { label: "存款", color: "text-blue-400", icon: "💰" },
@@ -80,6 +82,7 @@ export default function AssetsPage() {
   const [deleteConfirmAsset, setDeleteConfirmAsset] = useState<AssetItem | null>(null);
   const [deleting, setDeleting] = useState(false);
   const [auditLogsOpen, setAuditLogsOpen] = useState(false);
+  const [activeView, setActiveView] = useState<"LIST" | "XRAY">("LIST");
 
   useEffect(() => {
     fetchSummary();
@@ -265,12 +268,53 @@ export default function AssetsPage() {
         </div>
       </div>
 
-      {/* AI 组合体检卡片 */}
-      <div className="mb-6">
-        <AIPortfolioCard />
+      {/* 顶部主视图切换器 */}
+      <div className="flex items-center gap-1.5 bg-[#14161f] p-1.5 rounded-2xl border border-white/10 mb-6 max-w-fit shadow-md">
+        <button
+          type="button"
+          onClick={() => setActiveView("LIST")}
+          className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer ${
+            activeView === "LIST"
+              ? "bg-primary text-white shadow-md shadow-primary/25"
+              : "text-default-400 hover:text-white hover:bg-white/5"
+          }`}
+        >
+          <Wallet className="w-3.5 h-3.5" />
+          <span>📋 资产明细账本</span>
+        </button>
+        <button
+          type="button"
+          onClick={() => setActiveView("XRAY")}
+          className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer ${
+            activeView === "XRAY"
+              ? "bg-gradient-to-r from-primary to-blue-600 text-white shadow-md shadow-primary/25"
+              : "text-default-400 hover:text-white hover:bg-white/5"
+          }`}
+        >
+          <Activity className="w-3.5 h-3.5" />
+          <span>🩻 组合全景 X 光透视</span>
+          <span className="text-[9px] px-1.5 py-0.2 rounded-full bg-amber-500/20 text-amber-300 border border-amber-500/30">
+            PRO
+          </span>
+        </button>
       </div>
 
-      {/* 汇总卡片 */}
+      {activeView === "XRAY" ? (
+        /* X-Ray 全景透视看板 */
+        <XRayDashboard
+          onAskAI={(prompt) => {
+            window.dispatchEvent(new CustomEvent("open-ai-assistant", { detail: { prompt } }));
+          }}
+        />
+      ) : (
+        /* 资产明细账本主视图 */
+        <>
+          {/* AI 组合体检卡片 */}
+          <div className="mb-6">
+            <AIPortfolioCard onViewXRay={() => setActiveView("XRAY")} />
+          </div>
+
+          {/* 汇总卡片 */}
       <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
         <div className="glass-panel p-5 animate-fade-in">
           <span className="text-xs text-default-400">总资产净值</span>
@@ -805,6 +849,8 @@ export default function AssetsPage() {
             </div>
           </div>
         </div>
+      )}
+        </>
       )}
 
       {/* 资产审计流水与时光机弹窗 */}

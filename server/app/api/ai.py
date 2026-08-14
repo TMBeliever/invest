@@ -41,7 +41,7 @@ def _build_system_prompt(
     weekday_str = ["星期一", "星期二", "星期三", "星期四", "星期五", "星期六", "星期日"][
         datetime.datetime.now().weekday()
     ]
-    summary_part = f"\n\n[早期对话历史摘要]:\n{session_summary}" if session_summary else ""
+    summary_part = f"\n\n[早期对话历史要点]:\n{session_summary}" if session_summary else ""
 
     if mode == "general":
         return f"""你是一名知识渊博、解答详尽、逻辑严谨的【通用智能 AI 助手】。
@@ -53,31 +53,7 @@ def _build_system_prompt(
 3. 针对用户的各类提问提供直接、深入、富有建设性的回答。{summary_part}
 """
 
-    # 1. 安全读取用户真实持仓 (带异常保护与降级)
-    try:
-        raw_assets = storage_db.get_all_assets(user_id)
-        try:
-            assets = _enrich_assets(raw_assets)
-        except Exception:
-            assets = raw_assets
-        total_val = sum(a.get("currentValue", a.get("amount", 0)) or 0 for a in assets)
-        total_profit = sum(a.get("profit", 0) or 0 for a in assets)
-        annual_income = sum(a.get("annualIncome", 0) or 0 for a in assets)
-        yield_rate = round((annual_income / total_val * 100), 2) if total_val > 0 else 0.0
-
-        assets_summary_str = "\n".join([
-            f"- {a.get('name', '未命名资产')} ({a.get('category', 'OTHER')}): 市值 ¥{a.get('currentValue', a.get('amount', 0)):.2f}, "
-            f"预估年收益 ¥{a.get('annualIncome', 0):.2f}"
-            + (f", 成本股息率 {a['costDividendYield']}%" if a.get("costDividendYield") else "")
-            + (f", 已存 {a['daysHeld']}天(累计利息 ¥{a['accruedInterest']:.2f})" if a.get("accruedInterest") else "")
-            for a in assets
-        ])
-    except Exception as e:
-        logger.warning(f"读取持仓数据失败: {e}")
-        total_val, total_profit, annual_income, yield_rate = 0.0, 0.0, 0.0, 0.0
-        assets_summary_str = "  (持仓加载中或暂未录入)"
-
-    # 2. 安全读取大盘数据 (带缓存降级)
+    # 基础宏观数据 (轻量兜底)
     try:
         overview = AKShareClient.get_market_overview()
         bond_10y = overview.get("bondYield10y", 1.71)
@@ -85,161 +61,29 @@ def _build_system_prompt(
     except Exception:
         bond_10y, risk_ratio = 1.71, 3.05
 
-    # 3. 多级智能股票/基金识别 (全量支持 A股/港股/美股/ETF/场内外基金)
-    fin_context_str = ""
-    if user_query:
-        matched_symbols = []
+    return f"""你是一名精通个人资产配置、组合风险穿透与高股息量化策略的【InvestScope 智能 AI 投资顾问】。
 
-        # 优先级 1: 提取【...】中的标的 (如【招商银行】、【易方达蓝筹】、【510300】)
-        for bracket_match in re.finditer(r"【(.*?)】", user_query):
-            target_name = bracket_match.group(1).strip()
-            if target_name:
-                resolved = AKShareClient.resolve_symbol(target_name)
-                if resolved and resolved not in matched_symbols:
-                    matched_symbols.append(resolved)
+[系统基准环境]:
+- 当前精准时间: {now_str} {weekday_str}
+- 10年期国债基准收益率: {bond_10y}% | 股债风险溢价比 (ERP): {risk_ratio}{summary_part}
 
-        # 优先级 2: 提取 6 位数字代码 (覆盖 A股、ETF、场内外公募基金代码)
-        for code_match in re.finditer(r"\b\d{6}\b", user_query):
-            code = code_match.group(0)
-            if code not in matched_symbols:
-                matched_symbols.append(code)
+[核心能力与 Agentic 工具调用规范]:
+1. **自主工具调度 (Tool-Use / Function Calling)**:
+   你拥有全套系统级实时量化工具库（Tools）：
+   - `get_portfolio_xray()`: 获取用户当前全部真实资产的【全景 X 光透视体检报告】（包括底层行业真实穿透敞口、CR3与HHI集中度指数、五维因子雷达、4 种宏观极端压力测试预期盈亏与弹性评级）。
+   - `get_portfolio_summary()`: 获取用户当前资产净值概况、持仓总浮盈、预估年现金流收益与资产持仓列表。
+   - `get_stock_quote(symbol)`: 获取单只股票或场内ETF的盘中秒级实时行情、最新股价、涨跌幅与动态股息率。
+   - `get_financial_analysis(symbol)`: 获取官方财报体检、杜邦 ROE 拆解、4 大排雷指标及业绩前瞻。
+   - `get_stock_news(symbol)`: 获取最新资讯、分红派息公告。
+   - `compare_stocks(symbols)`: 多股横向对比矩阵。
+   *当用户提问涉及持仓体检、X光解读、压力测试、个股行情、财报或对比时，请自主调用对应工具获取最新真实数据后回答，严禁凭空编造虚假数字！*
 
-        # 优先级 3: 匹配用户当前持仓中的标的名称
-        for a in assets:
-            a_name = a.get("name", "")
-            a_code = a.get("code")
-            if a_name and len(a_name) >= 2 and a_name in user_query:
-                code_to_add = a_code or AKShareClient.resolve_symbol(a_name)
-                if code_to_add and code_to_add not in matched_symbols:
-                    matched_symbols.append(code_to_add)
+2. **回答准则与专业度**:
+   - 语言风格亲切、专业、洞察深刻。多用 Markdown 标题、加粗、数据对比表格与引用卡片。
+   - 解读体检时，按【核心概览 ➔ 行业穿透与集中度剖析 ➔ 极端压力测试表现 ➔ 针对性优化调仓建议】结构化展开。
 
-        # 优先级 4: 快速高频核心股票与指数内存字典
-        COMMON_NAMES = {
-            "招商银行": "600036", "招行": "600036",
-            "中国平安": "601318", "平安": "000001",
-            "贵州茅台": "600519", "茅台": "600519",
-            "五粮液": "000858", "长江电力": "600900",
-            "中国神华": "601088", "工商银行": "601398",
-            "建设银行": "601939", "农业银行": "601288",
-            "中国银行": "601988", "交通银行": "601328",
-            "中证红利": "000922", "红利低波": "512890",
-            "红利ETF": "510880", "沪深300": "000300",
-            "上证50": "000016", "科创50": "588000",
-            "宁德时代": "300750", "比亚迪": "002594",
-            "美的集团": "000333", "格力电器": "000651",
-            "海尔智家": "600690", "伊利股份": "600887",
-            "腾讯控股": "00700", "腾讯": "00700",
-            "阿里巴巴": "09988", "阿里": "09988",
-        }
-        for name, code in COMMON_NAMES.items():
-            if name in user_query and code not in matched_symbols:
-                matched_symbols.append(code)
-
-        # 优先级 5: 若仍未匹配且用户提问中包含个股提问，智能提取 1~2 个候选词解析 (带极短超时，绝不阻塞)
-        if not matched_symbols:
-            STOP_WORDS = {
-                "今天", "为什么", "分析", "一下", "怎么", "跌了", "涨了", "帮忙", "解读", "排雷",
-                "表现", "请问", "最近", "怎么回事", "好不好", "多少", "左右", "个点", "获取", "股息率",
-                "查询", "对比", "比较", "哪个", "适合", "我的", "持仓", "资产", "建议", "一键", "诊断",
-                "收益", "风险", "结构", "基金", "股票", "配置", "定期", "存款", "投资", "怎么样", "估值",
-                "买入", "卖出", "加仓", "减仓", "值得", "推荐", "龙头", "稳健", "防守"
-            }
-            chinese_text = "".join(re.findall(r"[\u4e00-\u9fa5]+", user_query))
-            candidates = []
-            for length in [4, 3, 2]:
-                for i in range(len(chinese_text) - length + 1):
-                    sub = chinese_text[i : i + length]
-                    if sub not in STOP_WORDS and len(sub) >= 2:
-                        candidates.append(sub)
-                if candidates:
-                    break
-            # 最多尝试解析前 2 个候选词
-            for cand in candidates[:2]:
-                resolved = AKShareClient.resolve_symbol(cand)
-                if resolved and resolved.isdigit() and len(resolved) == 6:
-                    if resolved not in matched_symbols:
-                        matched_symbols.append(resolved)
-                        break
-
-        if len(matched_symbols) > 1:
-            try:
-                from app.services.ai_tools import execute_compare_stocks
-                comp_data = execute_compare_stocks(matched_symbols[:4])
-                rows = []
-                for item in comp_data.get("comparison", []):
-                    q = item.get("quote", {})
-                    f = item.get("financial", {})
-                    dup = (f.get("dupont") or {}) if isinstance(f, dict) else {}
-                    rows.append(
-                        f"  * 【{q.get('name', item.get('symbol'))} ({q.get('code')})】: "
-                        f"最新价 ¥{q.get('price')} | 动态股息率 {q.get('dividendYield', '--')}% | "
-                        f"市盈率 PE {q.get('pe', '--')} | 杜邦 ROE {dup.get('roe', '--')}% ({dup.get('businessTypeLabel', '主板')})"
-                    )
-                matrix_str = "\n".join(rows)
-                fin_context_str = f"""
-
-[系统权威【多股对比矩阵】盘中实时数据]:
-{matrix_str}"""
-            except Exception as e:
-                logger.warning(f"提取多股对比失败: {e}")
-
-        elif len(matched_symbols) == 1:
-            target_code_or_name = matched_symbols[0]
-            try:
-                # 1. 提取单股实时行情
-                q = AKShareClient.get_realtime_quote(target_code_or_name)
-                quote_str = ""
-                if q:
-                    quote_str = (
-                        f"最新价: ¥{q.get('price')} | 今日涨跌幅: {q.get('changePct')}% ({'+' if (q.get('change') or 0) > 0 else ''}{q.get('change')}元) | "
-                        f"最新盘中动态股息率: {q.get('dividendYield', '--')}% | "
-                        f"市盈率 PE: {q.get('pe', '--')} | 市净率 PB: {q.get('pb', '--')} | "
-                        f"今开: ¥{q.get('open')} | 昨收: ¥{q.get('prevClose')} | 最高: ¥{q.get('high')} | 最低: ¥{q.get('low')}"
-                    )
-
-                # 2. 提取最新资讯
-                news_items = AKShareClient.get_stock_news(target_code_or_name)
-                news_str = "\n".join([f"  * [{n.get('time', '')}] {n.get('title', '')}" for n in (news_items or [])[:3]]) if news_items else "  * 暂无最新新闻公告"
-
-                # 3. 提取财报杜邦分析
-                fin = AKShareClient.get_financial_analysis_report(target_code_or_name)
-                fin_name = fin.get("name") or (q.get("name") if q else target_code_or_name)
-                fin_code = fin.get("code") or (q.get("code") if q else target_code_or_name)
-
-                dupont = fin.get("dupont", {})
-                preview = fin.get("earningsPreview", {})
-
-                fin_context_str = f"""
-
-[系统权威【{fin_name} ({fin_code})】盘中实时行情与数据]:
-- 目标标的: {fin_name} ({fin_code})
-- 盘中实时行情: {quote_str if quote_str else '最新收盘价'}
-- 杜邦拆解分析: ROE {dupont.get('roe', '--')}%, 商业模式: {dupont.get('businessTypeLabel', '主板')}
-- 最新市场资讯:
-{news_str}
-- 业绩前瞻与预估: {preview.get('summary', '暂无预估数据')}"""
-            except Exception as e:
-                logger.warning(f"提取股票行情与新闻失败 [{target_code_or_name}]: {e}")
-
-    summary_part = f"\n\n[早期对话历史摘要]:\n{session_summary}" if session_summary else ""
-
-    return f"""你是一名精通个人资产配置与高股息投资策略的【InvestScope 智能 AI 投资顾问】。
-
-[系统硬约束上下文 - 100% 真实数据，绝不可擅自猜测]:
-- 当前时间: {now_str} {weekday_str}
-- 10年期国债收益率: {bond_10y}% | 股债风险溢价比: {risk_ratio}
-- 用户总资产: ¥{total_val:,.2f}
-- 组合持仓总浮盈: ¥{total_profit:,.2f}
-- 预估年现金流收益: ¥{annual_income:,.2f}/年 (综合被动收益率 {yield_rate}%)
-- 用户真实持仓明细:
-{assets_summary_str if assets_summary_str else "  (暂未录入资产)"}{fin_context_str}{summary_part}
-
-[回答准则]:
-1. 语言风格亲切、专业、洞察深刻。多用 Markdown 标题、加粗、列表与引用卡片。
-2. 结合用户持仓集中度、现金仓比例与被动收益率，给出具有实操性的建议。
-3. 若提问涉及具体股票或大盘，请基于上方提供的真实数据进行深度剖析。
-4. 【智能 Action 操作卡片生成规范】:
-当用户的提问或上传的截图表达了明确的操作意图时，先给出亲切专业的解读与分析，并在回答最底部输出标准的 ```action:investscope 结构化代码块（前端会自动渲染为高颜值的交互操作卡片）：
+3. **【智能 Action 操作卡片生成规范】**:
+   当用户的提问或上传的截图表达了明确的操作意图时，先给出亲切专业的解读与分析，并在回答最底部输出标准的 ```action:investscope 结构化代码块（前端会自动渲染为高颜值的交互操作卡片）：
 
 - 【场景1：截图录入 / 批量入账 / 加仓记账】:
   * 截图录入时，默认 `duplicateStrategy: "SYNC_UPDATE"`（已有标的自动覆盖同步最新数据）；
@@ -428,7 +272,7 @@ def chat_stream(
 
         full_reply = ""
         try:
-            for chunk in llm.stream_chat(llm_messages, system_prompt):
+            for chunk in llm.stream_chat(llm_messages, system_prompt, user_id=user_id, enable_tools=(requested_mode == "finance")):
                 full_reply += chunk
                 data = json.dumps({"content": chunk, "sessionId": session_id}, ensure_ascii=False)
                 yield f"data: {data}\n\n"

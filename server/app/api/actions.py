@@ -63,16 +63,22 @@ def execute_action(
                 float(it["profitAmount"]) if it.get("profitAmount") is not None else None
             )
 
-            # 智能公募基金处理 (自动补全6位代码、全称与净值份额推导，精准保留历史浮盈)
-            if category == "FUND" or "基金" in name or "债券" in name or "联接" in name:
+            # 智能公募基金/QDII/债券处理 (自动补全6位代码、全称与净值份额推导，精准保留历史浮盈)
+            is_fund_like = category == "FUND" or any(k in name for k in ["基金", "债券", "联接", "纳斯达克", "标普", "QDII", "指数", "ETF"])
+            if is_fund_like:
                 category = "FUND"
-                if not fund_type:
-                    fund_type = "OTC" if ("ETF" not in name or "联接" in name) else "EXCHANGE"
 
                 if not code or len(code) != 6 or not code.isdigit():
-                    resolved_code = AKShareClient.resolve_symbol(name)
+                    clean_lookup_name = name.replace("...", "").strip()
+                    resolved_code = AKShareClient.resolve_symbol(clean_lookup_name)
                     if resolved_code and len(resolved_code) == 6 and resolved_code.isdigit():
                         code = resolved_code
+
+                if not fund_type:
+                    if code and len(code) == 6 and code[:2] in ("51", "15", "56", "58", "16", "52", "50") and "联接" not in name:
+                        fund_type = "EXCHANGE"
+                    else:
+                        fund_type = "OTC"
 
                 if code and len(code) == 6 and fund_type == "OTC":
                     nav_info = get_otc_fund_nav(code)
