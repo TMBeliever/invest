@@ -183,6 +183,21 @@ class StorageDB:
                 enable_morning_radar INTEGER NOT NULL DEFAULT 1,
                 enable_closing_review INTEGER NOT NULL DEFAULT 1,
                 enable_sentinel_alert INTEGER NOT NULL DEFAULT 1,
+                enable_opportunity_patrol INTEGER NOT NULL DEFAULT 1,
+                morning_radar_time TEXT NOT NULL DEFAULT '08:45',
+                closing_review_time TEXT NOT NULL DEFAULT '15:30',
+                patrol_scan_frequency TEXT NOT NULL DEFAULT 'INTERVAL_30MIN',
+                min_dividend_yield REAL NOT NULL DEFAULT 5.5,
+                max_pb_ratio REAL NOT NULL DEFAULT 0.85,
+                min_market_cap_billion REAL NOT NULL DEFAULT 100.0,
+                min_daily_volume_million REAL NOT NULL DEFAULT 25.0,
+                confidence_score_threshold INTEGER NOT NULL DEFAULT 80,
+                enable_csi_dividend INTEGER NOT NULL DEFAULT 1,
+                enable_large_cap_bluechip INTEGER NOT NULL DEFAULT 1,
+                enable_core_etf INTEGER NOT NULL DEFAULT 1,
+                enable_hk_dividend INTEGER NOT NULL DEFAULT 1,
+                enable_deposit_maturity INTEGER NOT NULL DEFAULT 1,
+                enable_macro_erp INTEGER NOT NULL DEFAULT 1,
                 channel_types TEXT NOT NULL DEFAULT '["IN_APP"]',
                 feishu_webhook_url TEXT,
                 wechat_webhook_url TEXT,
@@ -196,6 +211,21 @@ class StorageDB:
 
             # 动态自动补全字段 (迁移)
             for col, col_type in [
+                ("enable_opportunity_patrol", "INTEGER DEFAULT 1"),
+                ("morning_radar_time", "TEXT DEFAULT '08:45'"),
+                ("closing_review_time", "TEXT DEFAULT '15:30'"),
+                ("patrol_scan_frequency", "TEXT DEFAULT 'INTERVAL_30MIN'"),
+                ("min_dividend_yield", "REAL DEFAULT 5.5"),
+                ("max_pb_ratio", "REAL DEFAULT 0.85"),
+                ("min_market_cap_billion", "REAL DEFAULT 100.0"),
+                ("min_daily_volume_million", "REAL DEFAULT 25.0"),
+                ("confidence_score_threshold", "INTEGER DEFAULT 80"),
+                ("enable_csi_dividend", "INTEGER DEFAULT 1"),
+                ("enable_large_cap_bluechip", "INTEGER DEFAULT 1"),
+                ("enable_core_etf", "INTEGER DEFAULT 1"),
+                ("enable_hk_dividend", "INTEGER DEFAULT 1"),
+                ("enable_deposit_maturity", "INTEGER DEFAULT 1"),
+                ("enable_macro_erp", "INTEGER DEFAULT 1"),
                 ("telegram_bot_token", "TEXT"),
                 ("telegram_chat_id", "TEXT"),
                 ("telegram_api_host", "TEXT DEFAULT 'https://api.telegram.org'"),
@@ -965,6 +995,21 @@ class StorageDB:
                     "enable_morning_radar": True,
                     "enable_closing_review": True,
                     "enable_sentinel_alert": True,
+                    "enable_opportunity_patrol": True,
+                    "morning_radar_time": "08:45",
+                    "closing_review_time": "15:30",
+                    "patrol_scan_frequency": "INTERVAL_30MIN",
+                    "min_dividend_yield": 5.5,
+                    "max_pb_ratio": 0.85,
+                    "min_market_cap_billion": 100.0,
+                    "min_daily_volume_million": 25.0,
+                    "confidence_score_threshold": 80,
+                    "enable_csi_dividend": True,
+                    "enable_large_cap_bluechip": True,
+                    "enable_core_etf": True,
+                    "enable_hk_dividend": True,
+                    "enable_deposit_maturity": True,
+                    "enable_macro_erp": True,
                     "channel_types": ["IN_APP"],
                     "feishu_webhook_url": None,
                     "wechat_webhook_url": None,
@@ -981,6 +1026,23 @@ class StorageDB:
             d["enable_morning_radar"] = bool(d.get("enable_morning_radar", 1))
             d["enable_closing_review"] = bool(d.get("enable_closing_review", 1))
             d["enable_sentinel_alert"] = bool(d.get("enable_sentinel_alert", 1))
+            d["enable_opportunity_patrol"] = bool(d.get("enable_opportunity_patrol", 1))
+            d["enable_csi_dividend"] = bool(d.get("enable_csi_dividend", 1))
+            d["enable_large_cap_bluechip"] = bool(d.get("enable_large_cap_bluechip", 1))
+            d["enable_core_etf"] = bool(d.get("enable_core_etf", 1))
+            d["enable_hk_dividend"] = bool(d.get("enable_hk_dividend", 1))
+            d["enable_deposit_maturity"] = bool(d.get("enable_deposit_maturity", 1))
+            d["enable_macro_erp"] = bool(d.get("enable_macro_erp", 1))
+
+            d["morning_radar_time"] = d.get("morning_radar_time") or "08:45"
+            d["closing_review_time"] = d.get("closing_review_time") or "15:30"
+            d["patrol_scan_frequency"] = d.get("patrol_scan_frequency") or "INTERVAL_30MIN"
+            d["min_dividend_yield"] = float(d.get("min_dividend_yield") or 5.5)
+            d["max_pb_ratio"] = float(d.get("max_pb_ratio") or 0.85)
+            d["min_market_cap_billion"] = float(d.get("min_market_cap_billion") or 100.0)
+            d["min_daily_volume_million"] = float(d.get("min_daily_volume_million") or 25.0)
+            d["confidence_score_threshold"] = int(d.get("confidence_score_threshold") or 80)
+
             if not d.get("telegram_api_host"):
                 d["telegram_api_host"] = "https://api.telegram.org"
             return d
@@ -993,14 +1055,34 @@ class StorageDB:
             cursor.execute("""
             INSERT OR REPLACE INTO user_subscriptions (
                 user_id, enable_morning_radar, enable_closing_review, enable_sentinel_alert,
+                enable_opportunity_patrol, morning_radar_time, closing_review_time,
+                patrol_scan_frequency, min_dividend_yield, max_pb_ratio,
+                min_market_cap_billion, min_daily_volume_million, confidence_score_threshold,
+                enable_csi_dividend, enable_large_cap_bluechip, enable_core_etf,
+                enable_hk_dividend, enable_deposit_maturity, enable_macro_erp,
                 channel_types, feishu_webhook_url, wechat_webhook_url, email_address,
                 telegram_bot_token, telegram_chat_id, telegram_api_host, updated_at
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))
             """, (
                 user_id,
                 1 if config.get("enable_morning_radar", True) else 0,
                 1 if config.get("enable_closing_review", True) else 0,
                 1 if config.get("enable_sentinel_alert", True) else 0,
+                1 if config.get("enable_opportunity_patrol", True) else 0,
+                config.get("morning_radar_time") or "08:45",
+                config.get("closing_review_time") or "15:30",
+                config.get("patrol_scan_frequency") or "INTERVAL_30MIN",
+                float(config.get("min_dividend_yield", 5.5)),
+                float(config.get("max_pb_ratio", 0.85)),
+                float(config.get("min_market_cap_billion", 100.0)),
+                float(config.get("min_daily_volume_million", 25.0)),
+                int(config.get("confidence_score_threshold", 80)),
+                1 if config.get("enable_csi_dividend", True) else 0,
+                1 if config.get("enable_large_cap_bluechip", True) else 0,
+                1 if config.get("enable_core_etf", True) else 0,
+                1 if config.get("enable_hk_dividend", True) else 0,
+                1 if config.get("enable_deposit_maturity", True) else 0,
+                1 if config.get("enable_macro_erp", True) else 0,
                 channel_json,
                 config.get("feishu_webhook_url"),
                 config.get("wechat_webhook_url"),

@@ -5,13 +5,14 @@ import datetime
 
 class ReportType(str, Enum):
     SENTINEL_ALERT = "SENTINEL_ALERT"        # 个人持仓哨兵与风控预警
+    OPPORTUNITY_PATROL = "OPPORTUNITY_PATROL"  # 机会巡视雷达 (超跌/高息/破净/大底)
     MORNING_RADAR = "MORNING_RADAR"          # 每日早盘前瞻
     CLOSING_REVIEW = "CLOSING_REVIEW"        # 每日收盘复盘
     SECTOR_INSIGHT = "SECTOR_INSIGHT"        # 行业/黄金/大宗商品专题
 
 class Severity(str, Enum):
     INFO = "INFO"                            # 蓝色：温和关注 / 提示
-    OPPORTUNITY = "OPPORTUNITY"              # 绿色：投资机会
+    OPPORTUNITY = "OPPORTUNITY"              # 绿色/金色：投资机会
     WARNING = "WARNING"                      # 黄色：结构失衡 / 预警
     CRITICAL = "CRITICAL"                    # 红色：重大风险 / 逻辑破坏
 
@@ -26,7 +27,7 @@ class DecisionOption(BaseModel):
     name: str                                # 如 "【稳健守成】(维持现状)"
     tag: str                                 # 如 "保守方案" | "推荐优化" | "绝对防守"
     analysis: str                            # 详细量化推演与收益风险说明
-    action_type: Optional[str] = None        # 如 "REBALANCE" | "HOLD" | "TAKE_PROFIT"
+    action_type: Optional[str] = None        # 如 "REBALANCE" | "HOLD" | "TAKE_PROFIT" | "BUY_DIP"
 
 class IntelligencePayload(BaseModel):
     id: str
@@ -44,9 +45,33 @@ class IntelligencePayload(BaseModel):
 
 class UserSubscriptionConfig(BaseModel):
     user_id: Optional[str] = None
+    # 任务开关
     enable_morning_radar: bool = True
     enable_closing_review: bool = True
     enable_sentinel_alert: bool = True
+    enable_opportunity_patrol: bool = True
+
+    # 动态触发时间与频次配置
+    morning_radar_time: str = "08:45"        # 早盘推送时间 "HH:MM"
+    closing_review_time: str = "15:30"       # 收盘复盘时间 "HH:MM"
+    patrol_scan_frequency: str = "INTERVAL_30MIN" # "INTERVAL_30MIN", "INTERVAL_60MIN", "TIMES_1030_1430"
+
+    # 机会巡视量化门槛参数 (可滑动调节)
+    min_dividend_yield: float = 5.5          # 最低股息率门槛 %
+    max_pb_ratio: float = 0.85               # 最高市净率破净门槛
+    min_market_cap_billion: float = 100.0    # 最低市值门槛 (亿元)
+    min_daily_volume_million: float = 25.0   # 最低日均成交额 (万元)
+    confidence_score_threshold: int = 80     # 推送置信度门槛 (0~100)
+
+    # 标的池与策略开关
+    enable_csi_dividend: bool = True         # 启用中证红利成份股扫描
+    enable_large_cap_bluechip: bool = True   # 启用沪深300/500大盘蓝筹扫描
+    enable_core_etf: bool = True             # 启用核心宽基/高息/海外ETF扫描
+    enable_hk_dividend: bool = True          # 启用港股通高息央国企扫描
+    enable_deposit_maturity: bool = True     # 启用定存理财到期衔接提醒
+    enable_macro_erp: bool = True            # 启用股债溢价宏观极值提醒
+
+    # 推送通道
     channel_types: List[str] = Field(default_factory=lambda: ["IN_APP"]) # "IN_APP", "FEISHU", "WECHAT", "EMAIL", "TELEGRAM"
     feishu_webhook_url: Optional[str] = None
     wechat_webhook_url: Optional[str] = None

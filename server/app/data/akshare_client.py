@@ -156,10 +156,14 @@ def _parse_tencent_line(line: str) -> Optional[Dict[str, Any]]:
         limit_up    = _safe_float(parts[47]) if len(parts) > 47 else round(prev_close * 1.1, 2)
         limit_down  = _safe_float(parts[48]) if len(parts) > 48 else round(prev_close * 0.9, 2)
 
-        # 股息率：优先读取腾讯官方字段 64（与同花顺/雪球/Choice 完全一致）
+        # 股息率：A 股读取字段 64，港股读取字段 47
         div_yield = None
-        if len(parts) > 64 and parts[64]:
-            div_yield = _safe_float(parts[64])
+        if len(code) == 5:
+            if len(parts) > 47 and parts[47]:
+                div_yield = _safe_float(parts[47])
+        else:
+            if len(parts) > 64 and parts[64]:
+                div_yield = _safe_float(parts[64])
 
         # ETF / 基金 / 100元以下证券保留 4 位高精度单价，避免截断到 2 位小数导致与券商内部 4 位精度结算产生浮盈偏差
         precise_price = round(price, 4) if price < 100 else round(price, 2)

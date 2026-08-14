@@ -13,11 +13,55 @@ from app.schemas.intelligence import (
 )
 from app.data.storage import storage_db
 from app.services.intelligence.sentinel_risk import sentinel_risk_generator
+from app.services.intelligence.opportunity_patrol import opportunity_patrol_generator
 from app.services.intelligence.morning_radar import morning_radar_generator
 from app.services.intelligence.closing_review import closing_review_generator
 from app.services.dispatcher.router import dispatch_router
 
 router = APIRouter(prefix="/api/intelligence", tags=["intelligence"])
+
+# ─── 0. 机会巡视雷达 (Opportunity Patrol) ─────────────────────────
+
+@router.get("/opportunities")
+async def get_opportunities(
+    current_user: dict = Depends(get_current_user)
+):
+    """
+    获取当前用户最新的高胜率投资机会与捡漏雷达（多因子评分 ≥ 80分）。
+    """
+    user_id = current_user["id"]
+    opps = await opportunity_patrol_generator.scan_and_generate_opportunities(user_id)
+    return {
+        "total_opportunities": len(opps),
+        "opportunities": [op.model_dump() for op in opps]
+    }
+
+@router.post("/opportunities/scan")
+async def trigger_opportunity_scan(
+    push_to_subscribed: bool = Query(False, description="是否同时推送到用户绑定的外部渠道"),
+    current_user: dict = Depends(get_current_user)
+):
+    """
+    【强制全域重新扫描】市场黄金机会，并可按需一键推送。
+    """
+    user_id = current_user["id"]
+    opps = await opportunity_patrol_generator.scan_and_generate_opportunities(user_id)
+
+    pushed_channels = []
+    if push_to_subscribed and opps:
+        # 推送前 3 条最高质量机会
+        for op in opps[:3]:
+            res = await dispatch_router.dispatch(op, user_id=user_id)
+            for ch, ok in res.items():
+                if ok and ch not in pushed_channels and ch != "IN_APP":
+                    pushed_channels.append(ch)
+
+    return {
+        "success": True,
+        "total_found": len(opps),
+        "pushed_channels": pushed_channels,
+        "opportunities": [op.model_dump() for op in opps]
+    }
 
 # ─── 1. 组合智能哨兵与风险预警 ──────────────────────────────────
 
