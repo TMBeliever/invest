@@ -18,6 +18,9 @@ import {
   Plus,
   MessageSquare,
   GripHorizontal,
+  Cpu,
+  ChevronDown,
+  Zap,
 } from "lucide-react";
 
 interface Message {
@@ -35,6 +38,14 @@ interface ChatSession {
 }
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || "";
+
+export const AVAILABLE_MODELS = [
+  { id: "gemini-flash-lite-latest", name: "Gemini Flash Lite", tag: "极速低延时" },
+  { id: "gemini-2.5-flash", name: "Gemini 2.5 Flash", tag: "经典稳定" },
+  { id: "gemini-3.5-flash", name: "Gemini 3.5 Flash", tag: "综合主力" },
+  { id: "gemini-3.6-flash", name: "Gemini 3.6 Flash", tag: "平衡升级" },
+  { id: "gemini-3.7-flash", name: "Gemini 3.7 Flash", tag: "前沿旗舰" },
+];
 
 function FormattedMarkdown({ content }: { content: string }) {
   if (!content) return null;
@@ -237,6 +248,25 @@ export function AIAssistantDrawer() {
   // 会话与消息状态
   const [sessions, setSessions] = useState<ChatSession[]>([]);
   const [currentSessionId, setCurrentSessionId] = useState<string | null>(null);
+  const [selectedModel, setSelectedModel] = useState<string>("gemini-flash-lite-latest");
+
+  // 初始化与持久化保存模型偏好
+  useEffect(() => {
+    if (typeof window !== "undefined") {
+      const saved = localStorage.getItem("investscope-ai-model");
+      if (saved && AVAILABLE_MODELS.some((m) => m.id === saved)) {
+        setSelectedModel(saved);
+      }
+    }
+  }, []);
+
+  const handleModelChange = (modelId: string) => {
+    setSelectedModel(modelId);
+    if (typeof window !== "undefined") {
+      localStorage.setItem("investscope-ai-model", modelId);
+    }
+  };
+
   const [messages, setMessages] = useState<Message[]>([
     {
       id: "welcome",
@@ -528,6 +558,7 @@ export function AIAssistantDrawer() {
       const apiPayload = {
         sessionId: currentSessionId,
         messages: newMessages.map((m) => ({ role: m.role, content: m.content })),
+        model: selectedModel,
       };
 
       const res = await fetch(`${API_BASE}/api/ai/chat`, {
@@ -546,38 +577,40 @@ export function AIAssistantDrawer() {
       const reader = res.body?.getReader();
       const decoder = new TextDecoder();
       let assistantReply = "";
+      let buffer = "";
 
       if (reader) {
         while (true) {
           const { done, value } = await reader.read();
           if (done) break;
 
-          const chunkStr = decoder.decode(value, { stream: true });
-          const lines = chunkStr.split("\n\n");
+          buffer += decoder.decode(value, { stream: true });
+          const lines = buffer.split("\n");
+          // 将末尾可能不完整的一行留存到下一次 chunk 到达时拼接
+          buffer = lines.pop() || "";
 
           for (const line of lines) {
             const trimmed = line.trim();
-            if (trimmed.startsWith("data: ")) {
-              const dataContent = trimmed.slice(6).trim();
-              if (dataContent === "[DONE]") break;
-              try {
-                const parsed = JSON.parse(dataContent);
-                if (parsed.sessionId && !currentSessionId) {
-                  setCurrentSessionId(parsed.sessionId);
-                }
-                if (parsed.content) {
-                  assistantReply += parsed.content;
-                  setMessages((prev) =>
-                    prev.map((msg) =>
-                      msg.id === assistantMsgId
-                        ? { ...msg, content: assistantReply }
-                        : msg
-                    )
-                  );
-                }
-              } catch {
-                // ignore
+            if (!trimmed.startsWith("data: ")) continue;
+            const dataContent = trimmed.slice(6).trim();
+            if (dataContent === "[DONE]") break;
+            try {
+              const parsed = JSON.parse(dataContent);
+              if (parsed.sessionId && !currentSessionId) {
+                setCurrentSessionId(parsed.sessionId);
               }
+              if (parsed.content) {
+                assistantReply += parsed.content;
+                setMessages((prev) =>
+                  prev.map((msg) =>
+                    msg.id === assistantMsgId
+                      ? { ...msg, content: assistantReply }
+                      : msg
+                  )
+                );
+              }
+            } catch {
+              // ignore
             }
           }
         }
@@ -700,6 +733,27 @@ export function AIAssistantDrawer() {
 
           {!isMinimized && (
             <>
+              {/* 模型选择器栏 */}
+              <div className="px-3.5 py-2 bg-[#16181f] border-b border-white/5 flex items-center justify-between text-xs">
+                <div className="flex items-center gap-1.5 text-default-400 text-[11px]">
+                  <Cpu className="w-3.5 h-3.5 text-primary" />
+                  <span>AI 模型:</span>
+                </div>
+                <div className="relative">
+                  <select
+                    value={selectedModel}
+                    onChange={(e) => handleModelChange(e.target.value)}
+                    className="bg-[#20222a] text-white text-[11px] font-medium rounded-lg px-2.5 py-1 pr-6 border border-white/10 focus:border-primary focus:outline-none appearance-none cursor-pointer hover:border-primary/50 transition-colors"
+                  >
+                    {AVAILABLE_MODELS.map((m) => (
+                      <option key={m.id} value={m.id} className="bg-[#1a1c22] text-white">
+                        {m.name} ({m.tag})
+                      </option>
+                    ))}
+                  </select>
+                  <ChevronDown className="w-3 h-3 text-default-400 absolute right-2 top-1/2 -translate-y-1/2 pointer-events-none" />
+                </div>
+              </div>
               {/* 历史对话列表侧栏视图 */}
               {showHistory ? (
                 <div className="flex-1 p-3 overflow-y-auto bg-[#141519] space-y-2 text-xs">

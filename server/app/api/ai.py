@@ -26,6 +26,7 @@ class ChatMessagePayload(BaseModel):
 class ChatRequestPayload(BaseModel):
     sessionId: Optional[str] = None
     messages: List[ChatMessagePayload]
+    model: Optional[str] = None
 
 
 def _build_system_prompt(
@@ -255,9 +256,13 @@ def chat_stream(
         llm_messages = [{"role": m["role"], "content": m["content"]} for m in all_db_msgs]
 
     system_prompt = _build_system_prompt(user_id, session_summary, user_msg_content)
-    llm = get_llm_provider()
+    llm = get_llm_provider(model=payload.model)
 
     def event_generator():
+        # 立即建立 SSE 握手，防止 Next.js / Nginx 反向代理层因等待上游大模型首包耗时而报 500/504
+        handshake_data = json.dumps({"content": "", "sessionId": session_id, "status": "connected"}, ensure_ascii=False)
+        yield f"data: {handshake_data}\n\n"
+
         full_reply = ""
         try:
             for chunk in llm.stream_chat(llm_messages, system_prompt):
@@ -271,11 +276,19 @@ def chat_stream(
             yield "data: [DONE]\n\n"
         except Exception as e:
             logger.error(f"SSE 流生成错误: {e}")
-            err_data = json.dumps({"content": f"\n\n[发生错误: {str(e)}]"}, ensure_ascii=False)
+            err_data = json.dumps({"content": f"\n\n[提示: AI 响应中断 ({str(e)})，建议切换上方模型重试]", "sessionId": session_id}, ensure_ascii=False)
             yield f"data: {err_data}\n\n"
             yield "data: [DONE]\n\n"
 
-    return StreamingResponse(event_generator(), media_type="text/event-stream")
+    return StreamingResponse(
+        event_generator(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache, no-transform",
+            "Connection": "keep-alive",
+            "X-Accel-Buffering": "no",
+        },
+    )
 
 
 @router.get("/diagnose")

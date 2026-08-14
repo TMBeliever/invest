@@ -53,19 +53,20 @@ class OpenAIProvider(BaseLLMProvider):
                 headers=headers,
                 json=payload,
                 stream=True,
-                timeout=60,
+                timeout=(5, 60),
                 proxies={"http": None, "https": None},
             )
 
             if resp.status_code != 200:
-                logger.error(f"OpenAI API 错误: Status {resp.status_code}, Body: {resp.text}")
-                yield f"[API 错误 {resp.status_code}]: 无法连接至大模型服务，请检查 API Key 或 Base URL。"
+                err_text = resp.text[:200]
+                logger.error(f"OpenAI API 错误: Status {resp.status_code}, Body: {err_text}")
+                yield f"[模型服务异常 (HTTP {resp.status_code})]: 无法连接至大模型服务 ({self.model})。建议切换其他模型（如 Flash Lite 或 2.5 Flash）重试。"
                 return
 
-            for line in resp.iter_lines():
+            for line in resp.iter_lines(chunk_size=1):
                 if not line:
                     continue
-                line_str = line.decode("utf-8")
+                line_str = line.decode("utf-8") if isinstance(line, bytes) else line
                 if line_str.startswith("data: "):
                     data_content = line_str[6:].strip()
                     if data_content == "[DONE]":
@@ -78,9 +79,15 @@ class OpenAIProvider(BaseLLMProvider):
                             yield text_chunk
                     except Exception:
                         continue
+        except requests.exceptions.Timeout:
+            logger.error(f"OpenAI 请求超时: model={self.model}")
+            yield f"[响应超时]: 当前大模型 ({self.model}) 响应超时，建议您在上方切换为极速模型（如 Flash Lite）后重试。"
+        except requests.exceptions.RequestException as e:
+            logger.error(f"OpenAI 网络连接异常: {e}")
+            yield f"[网络连接异常]: 无法连通模型中转服务，请稍后重试或切换模型。"
         except Exception as e:
             logger.error(f"OpenAI 请求异常: {e}")
-            yield f"[网络请求异常]: {str(e)}"
+            yield f"[服务异常]: {str(e)}"
 
 
 class DeepSeekProvider(OpenAIProvider):
@@ -128,13 +135,13 @@ class MockProvider(BaseLLMProvider):
             time.sleep(0.012)
 
 
-def get_llm_provider() -> BaseLLMProvider:
+def get_llm_provider(model: Optional[str] = None) -> BaseLLMProvider:
     provider_type = os.environ.get("LLM_PROVIDER", "openai").lower()
-    if provider_type == "openai" and os.environ.get("OPENAI_API_KEY"):
-        return OpenAIProvider()
-    elif provider_type == "deepseek" and (os.environ.get("DEEPSEEK_API_KEY") or os.environ.get("OPENAI_API_KEY")):
-        return DeepSeekProvider()
+    if provider_type == "openai" and (os.environ.get("OPENAI_API_KEY") or settings.OPENAI_API_KEY):
+        return OpenAIProvider(model=model)
+    elif provider_type == "deepseek" and (os.environ.get("DEEPSEEK_API_KEY") or os.environ.get("OPENAI_API_KEY") or settings.OPENAI_API_KEY):
+        return DeepSeekProvider(model=model)
     elif provider_type == "openai":
-        return OpenAIProvider()
+        return OpenAIProvider(model=model)
     else:
         return MockProvider()
