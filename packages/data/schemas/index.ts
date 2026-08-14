@@ -461,13 +461,19 @@ export const AssetItemSchema = z.object({
   payoutMethod: PayoutMethodSchema.nullable().optional(),
   accruedInterest: z.number().nullable().optional(),
   daysHeld: z.number().nullable().optional(),
+  depositStatus: z.string().nullable().optional(),
+  isActive: z.boolean().nullable().optional(),
 
   // 股票/基金
   fundType: FundTypeSchema.nullable().optional(), // 仅 category=FUND 时有值：EXCHANGE 场内ETF / OTC 场外基金
+  currency: z.string().nullable().optional(),
+  fxRate: z.number().nullable().optional(),
   shares: z.number().nullable().optional(),
   costPrice: z.number().nullable().optional(),
   currentPrice: z.number().nullable().optional(),
   prevClose: z.number().nullable().optional(),
+  lastTradingProfit: z.number().nullable().optional(),
+  lastTradingProfitPct: z.number().nullable().optional(),
   profit: z.number().nullable().optional(),
   profitPct: z.number().nullable().optional(),
   dividendYield: z.number().nullable().optional(),
@@ -488,13 +494,28 @@ export const AssetAllocationSchema = z.object({
 });
 export type AssetAllocation = z.infer<typeof AssetAllocationSchema>;
 
+export const MarketStatusSchema = z.object({
+  isTradingDay: z.boolean(),
+  session: z.enum(["PRE_MARKET", "INTRADAY", "POST_MARKET", "CLOSED"]),
+  statusText: z.string(),
+  canTrade: z.boolean(),
+});
+export type MarketStatus = z.infer<typeof MarketStatusSchema>;
+
 export const StockAccountSummarySchema = z.object({
   totalValue: z.number(),
   dailyProfit: z.number(),
   dailyProfitPct: z.number(),
+  lastTradingProfit: z.number().optional(),
+  pureStockDailyProfit: z.number().optional(),
+  etfDailyProfit: z.number().optional(),
+  pureStockLastProfit: z.number().optional(),
+  etfLastProfit: z.number().optional(),
   totalProfit: z.number(),
   totalProfitPct: z.number(),
   count: z.number(),
+  stockCount: z.number().optional(),
+  etfCount: z.number().optional(),
 });
 export type StockAccountSummary = z.infer<typeof StockAccountSummarySchema>;
 
@@ -503,7 +524,12 @@ export const WealthAccountSummarySchema = z.object({
   guaranteedDailyIncome: z.number(),
   guaranteedAnnualIncome: z.number(),
   otcDailyProfit: z.number(),
+  otcLastTradingProfit: z.number().optional(),
+  totalDailyIncome: z.number().optional(),
   count: z.number(),
+  depositCount: z.number().optional(),
+  otcFundCount: z.number().optional(),
+  wealthCount: z.number().optional(),
 });
 export type WealthAccountSummary = z.infer<typeof WealthAccountSummarySchema>;
 
@@ -527,6 +553,7 @@ export const AssetSummarySchema = z.object({
     estimatedAnnualIncome: z.number(),
     estimatedDailyIncome: z.number().optional(),
     assetCount: z.number(),
+    marketStatus: MarketStatusSchema.optional(),
     stockAccount: StockAccountSummarySchema.optional(),
     wealthAccount: WealthAccountSummarySchema.optional(),
     dividendDimension: DividendDimensionSummarySchema.optional(),

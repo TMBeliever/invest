@@ -359,9 +359,22 @@ export default function AssetsPage() {
             <div className="glass-panel p-5 animate-fade-in relative overflow-hidden">
               <div className="flex items-center justify-between">
                 <span className="text-xs text-default-400">总资产净值</span>
-                <span className="text-[10px] px-2 py-0.5 rounded-full bg-white/5 text-default-400">
-                  {s?.assetCount ?? 0} 项资产
-                </span>
+                <div className="flex items-center gap-1.5">
+                  {s?.marketStatus?.statusText && (
+                    <span
+                      className={`text-[9px] px-1.5 py-0.5 rounded-full font-medium ${
+                        s.marketStatus.isTradingDay
+                          ? "bg-emerald-500/15 text-emerald-400 border border-emerald-500/20"
+                          : "bg-default-100 text-default-400 border border-white/10"
+                      }`}
+                    >
+                      {s.marketStatus.statusText}
+                    </span>
+                  )}
+                  <span className="text-[10px] px-2 py-0.5 rounded-full bg-white/5 text-default-400">
+                    {s?.assetCount ?? 0} 项资产
+                  </span>
+                </div>
               </div>
               <div className="text-2xl font-bold mt-1 text-white">{formatMoney(s?.totalValue)}</div>
               <div className="mt-2.5 pt-2 border-t border-white/5 flex items-center justify-between text-xs">
@@ -381,13 +394,15 @@ export default function AssetsPage() {
               </div>
             </div>
 
-            {/* 卡片 2: 📈 股票账户 (场内股票+ETF) */}
+            {/* 卡片 2: 📈 场内账户 (股票 + 场内ETF) */}
             <div className="glass-panel p-5 animate-fade-in relative overflow-hidden border-l-4 border-l-rose-500/80">
               <div className="flex items-center justify-between">
                 <span className="text-xs text-rose-300 flex items-center gap-1 font-medium">
-                  <span>📈</span> 股票账户 (场内)
+                  <span>📈</span> 场内账户 (股票+ETF)
                 </span>
-                <span className="text-[10px] text-default-400">{s?.stockAccount?.count ?? 0} 只持仓</span>
+                <span className="text-[10px] text-default-400">
+                  {s?.stockAccount?.stockCount ?? 0} 股票 · {s?.stockAccount?.etfCount ?? 0} ETF
+                </span>
               </div>
               <div className="text-2xl font-bold mt-1 text-white">
                 {formatMoney(s?.stockAccount?.totalValue)}
@@ -408,56 +423,73 @@ export default function AssetsPage() {
                     </span>
                   </span>
                 </div>
-                <div className="flex items-center justify-between text-[11px]">
-                  <span className="text-default-400">累计浮盈:</span>
-                  <span
-                    className={`font-mono ${
-                      (s?.stockAccount?.totalProfit ?? 0) >= 0 ? "text-rise" : "text-fall"
-                    }`}
-                  >
-                    {(s?.stockAccount?.totalProfit ?? 0) >= 0 ? "+" : ""}
-                    {formatMoney(s?.stockAccount?.totalProfit)} ({s?.stockAccount?.totalProfitPct ?? 0}%)
-                  </span>
-                </div>
+                {(s?.stockAccount?.etfCount ?? 0) > 0 && (
+                  <div className="flex items-center justify-between text-[10px] text-default-400 pt-0.5">
+                    <span>
+                      股票:{" "}
+                      <span className={(s?.stockAccount?.pureStockDailyProfit ?? 0) >= 0 ? "text-rise" : "text-fall"}>
+                        {(s?.stockAccount?.pureStockDailyProfit ?? 0) >= 0 ? "+" : ""}
+                        {formatMoney(s?.stockAccount?.pureStockDailyProfit)}
+                      </span>
+                    </span>
+                    <span>
+                      ETF:{" "}
+                      <span className={(s?.stockAccount?.etfDailyProfit ?? 0) >= 0 ? "text-rise" : "text-fall"}>
+                        {(s?.stockAccount?.etfDailyProfit ?? 0) >= 0 ? "+" : ""}
+                        {formatMoney(s?.stockAccount?.etfDailyProfit)}
+                      </span>
+                    </span>
+                  </div>
+                )}
               </div>
             </div>
 
-            {/* 卡片 3: 🏦 理财账户 (存款+理财+场外基金，突出确定性日收益) */}
+            {/* 卡片 3: 🏦 理财账户 (固收理财+存款+场外基金) */}
             <div className="glass-panel p-5 animate-fade-in relative overflow-hidden border-l-4 border-l-emerald-500/80">
               <div className="flex items-center justify-between">
                 <span className="text-xs text-emerald-300 flex items-center gap-1 font-medium">
-                  <span>🏦</span> 理财账户 (稳健确定生息)
+                  <span>🏦</span> 理财账户 (场外/存款)
                 </span>
-                <span className="text-[10px] text-default-400">{s?.wealthAccount?.count ?? 0} 笔配置</span>
+                <span className="text-[10px] text-default-400">
+                  {s?.wealthAccount?.otcFundCount ?? 0} 基金 · {s?.wealthAccount?.depositCount ?? 0} 存款
+                </span>
               </div>
               <div className="text-2xl font-bold mt-1 text-emerald-400 flex items-baseline gap-1">
-                <span>+{formatMoney(s?.wealthAccount?.guaranteedDailyIncome ?? s?.guaranteedDailyIncome)}</span>
+                <span>
+                  {(s?.wealthAccount?.totalDailyIncome ?? 0) >= 0 ? "+" : ""}
+                  {formatMoney(s?.wealthAccount?.totalDailyIncome ?? s?.wealthAccount?.guaranteedDailyIncome)}
+                </span>
                 <span className="text-xs font-normal text-emerald-400/80">/ 天</span>
               </div>
               <div className="mt-2.5 pt-2 border-t border-white/5 space-y-1 text-xs">
                 <div className="flex items-center justify-between">
-                  <span className="text-default-400">确定年利息:</span>
-                  <span className="font-mono text-emerald-300">
-                    {formatMoney(s?.wealthAccount?.guaranteedAnnualIncome ?? s?.guaranteedAnnualIncome)}/年
+                  <span className="text-default-400">场外基金变动:</span>
+                  <span
+                    className={`font-mono ${
+                      (s?.wealthAccount?.otcDailyProfit ?? 0) >= 0 ? "text-rise" : "text-fall"
+                    }`}
+                  >
+                    {(s?.wealthAccount?.otcDailyProfit ?? 0) >= 0 ? "+" : ""}
+                    {formatMoney(s?.wealthAccount?.otcDailyProfit)}
                   </span>
                 </div>
                 <div className="flex items-center justify-between text-[11px]">
-                  <span className="text-default-400">理财总本金:</span>
-                  <span className="font-mono text-default-300">
-                    {formatMoney(s?.wealthAccount?.totalValue)}
+                  <span className="text-default-400">存款稳健年息:</span>
+                  <span className="font-mono text-emerald-300">
+                    +{formatMoney(s?.wealthAccount?.guaranteedAnnualIncome)}/年
                   </span>
                 </div>
               </div>
             </div>
 
-            {/* 卡片 4: 🎁 预估股票分红 (单独维度·浮动现金流) */}
+            {/* 卡片 4: 🎁 预估分红/现金流 (股票+场内红利ETF) */}
             <div className="glass-panel p-5 animate-fade-in relative overflow-hidden border-l-4 border-l-amber-500/80 group cursor-help">
               <div className="flex items-center justify-between">
                 <span className="text-xs text-amber-300 flex items-center gap-1 font-medium">
-                  <span>🎁</span> 预估股票分红
+                  <span>🎁</span> 预估分红现金流
                 </span>
                 <span className="text-[9px] px-1.5 py-0.2 rounded bg-amber-500/15 text-amber-400 border border-amber-500/20">
-                  浮动非固定
+                  股票+红利ETF
                 </span>
               </div>
               <div className="text-2xl font-bold mt-1 text-amber-400 flex items-baseline gap-1">
@@ -474,7 +506,7 @@ export default function AssetsPage() {
                 <div className="flex items-center justify-between text-[11px]">
                   <span className="text-default-400">加权股息率:</span>
                   <span className="font-mono text-default-300">
-                    {s?.dividendDimension?.avgDividendYield ?? 0}% ({s?.dividendDimension?.hasDividendAssetsCount ?? 0}只分红)
+                    {s?.dividendDimension?.avgDividendYield ?? 0}% ({s?.dividendDimension?.hasDividendAssetsCount ?? 0}只分红资产)
                   </span>
                 </div>
               </div>
@@ -547,7 +579,7 @@ export default function AssetsPage() {
                             {isOtcFund ? (
                               <span
                                 className="text-[9px] px-1.5 py-0.5 rounded-full bg-amber-500/15 text-amber-400 font-medium"
-                                title={`场外基金：净值为 T-1 日收盘披露数据，非盘中实时价格${a.navDate ? `（净值日期 ${a.navDate}）` : ""}`}
+                                title={`场外基金：净值为最新披露数据，非盘中实时价格${a.navDate ? `（净值日期 ${a.navDate}）` : ""}`}
                               >
                                 场外 · 非实时
                               </span>
@@ -571,7 +603,7 @@ export default function AssetsPage() {
                           <div className="flex flex-col gap-0.5">
                             <span className={`text-xs font-medium ${meta.color}`}>{meta.icon} {meta.label}</span>
                             <span className="text-[9px] text-default-400">
-                              {isStockAccount ? "📈 股票账户" : "🏦 理财账户"}
+                              {isStockAccount ? "📈 场内账户" : "🏦 理财账户"}
                             </span>
                           </div>
                         </td>
@@ -602,7 +634,7 @@ export default function AssetsPage() {
                               {!a.startDate && !a.maturityDate && <span className="text-default-400">--</span>}
                             </div>
                           )}
-                          {a.category === "STOCK" && a.dividendYield != null && (
+                          {(a.category === "STOCK" || a.category === "FUND") && a.dividendYield != null && (
                             <div className="flex flex-col items-end text-[10px] leading-tight mt-0.5">
                               <span className="text-emerald-400 font-medium" title="最新盘中市场股息率">最新 {a.dividendYield}%</span>
                               {a.costDividendYield != null && (
@@ -634,7 +666,7 @@ export default function AssetsPage() {
                                 {(a.dailyProfit ?? 0) >= 0 ? "+" : ""}{formatMoney(a.dailyProfit)}
                               </div>
                               {a.dailyProfitPct != null && (
-                                <div className="text-[10px] text-default-400">
+                                <div className={`text-[10px] ${(a.dailyProfitPct ?? 0) >= 0 ? "text-rise" : "text-fall"}`}>
                                   {(a.dailyProfitPct ?? 0) >= 0 ? "+" : ""}{a.dailyProfitPct}%
                                 </div>
                               )}
@@ -642,10 +674,14 @@ export default function AssetsPage() {
                           ) : a.dailyIncome ? (
                             <div>
                               <span className="text-emerald-400 font-semibold">+{formatMoney(a.dailyIncome)}</span>
-                              <span className="text-[10px] text-emerald-400/80 block font-normal">/ 天 确定实收</span>
+                              <span className="text-[10px] text-emerald-400/80 block font-normal">
+                                {a.depositStatus === "MATURED" ? "已到期" : "/ 天 确定实收"}
+                              </span>
                             </div>
                           ) : (
-                            <span className="text-default-400">--</span>
+                            <span className="text-default-400">
+                              {a.depositStatus === "MATURED" ? "已到期" : "--"}
+                            </span>
                           )}
                         </td>
                         <td className="py-3.5 px-4 text-right font-mono font-medium">
@@ -658,10 +694,10 @@ export default function AssetsPage() {
                           )}
                         </td>
                         <td className="py-3.5 px-4 text-right font-mono font-medium">
-                          {a.category === "STOCK" ? (
+                          {a.estimatedDividendAnnual ? (
                             <div>
                               <span className="text-amber-400 font-semibold">
-                                {a.estimatedDividendAnnual ? `${formatMoney(a.estimatedDividendAnnual)}/年` : "--"}
+                                {formatMoney(a.estimatedDividendAnnual)}/年
                               </span>
                               <div className="text-[10px] text-amber-400/80 font-normal" title="预估年度现金分红（浮动非保证）">
                                 {a.estimatedDividendDaily ? `折合 +${formatMoney(a.estimatedDividendDaily)}/天` : "浮动分红"}

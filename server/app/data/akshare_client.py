@@ -58,9 +58,20 @@ def ttl_cached(seconds: int = 5):
 # 64 = TTM 股息率%（交易所官方，与同花顺/雪球一致）
 
 
+def _clean_code(code: str) -> str:
+    """清理代码，去除市场后缀 (如 .SH, .SZ, .SS, .HK) 与空格"""
+    c = str(code or "").strip()
+    c_upper = c.upper()
+    for suffix in [".SH", ".SZ", ".SS", ".HK", ".BJ", ".OF"]:
+        if c_upper.endswith(suffix):
+            c = c[: -len(suffix)].strip()
+            break
+    return c
+
+
 def _tencent_symbol(code: str) -> str:
     """根据代码前缀判断交易所前缀（全量支持 A股、港股、美股及全球指数）"""
-    c = code.strip()
+    c = _clean_code(code)
     c_upper = c.upper()
     if c_upper in [".DJI", "DJI", "US.DJI"]:
         return "us.DJI"
@@ -76,7 +87,7 @@ def _tencent_symbol(code: str) -> str:
         return "hkHSCEI"
     if c_upper in ["HSTECH", "HKHSTECH", "R_HSTECH"]:
         return "hkHSTECH"
-    if c.startswith("sh") or c.startswith("sz") or c.startswith("hk") or c.startswith("us") or c.startswith("r_"):
+    if c.lower().startswith("sh") or c.lower().startswith("sz") or c.lower().startswith("hk") or c.lower().startswith("us") or c.lower().startswith("r_"):
         return c.lower()
     if c_upper in ["000922", "000300", "000001", "000905", "588000"]:
         return f"sh{c}"
@@ -84,7 +95,7 @@ def _tencent_symbol(code: str) -> str:
         return f"sz{c}"
     if c.startswith("6") or c.startswith("5") or c.startswith("9"):
         return f"sh{c}"
-    if c.startswith("0") or c.startswith("3"):
+    if c.startswith("0") or c.startswith("3") or c.startswith("1"):
         if len(c) == 5:
             return f"hk{c}"
         return f"sz{c}"
@@ -130,8 +141,8 @@ def _parse_tencent_line(line: str) -> Optional[Dict[str, Any]]:
         else:
             ts = time_raw or "盘后"
 
-        change      = _safe_float(parts[31]) or 0.0
-        change_pct  = _safe_float(parts[32]) or 0.0
+        change      = _safe_float(parts[31]) or (round(price - prev_close, 4) if prev_close else 0.0)
+        change_pct  = _safe_float(parts[32]) or (round((price - prev_close) / prev_close * 100, 2) if prev_close else 0.0)
         high_p      = _safe_float(parts[33]) or price
         low_p       = _safe_float(parts[34]) or price
         amount_yuan = (_safe_float(parts[37]) or 0.0) * 10000 if len(parts) > 37 else 0.0
@@ -182,10 +193,16 @@ def _parse_tencent_line(line: str) -> Optional[Dict[str, Any]]:
 def _batch_tencent_quote(codes: List[str], timeout: int = 4) -> Dict[str, Dict[str, Any]]:
     """
     批量拉取腾讯行情，返回 {code: parsed_dict}。
-    一次最多 30 只，自动分批。
+    同时使用多种 key 索引（原始 code、clean_code、小写前缀），确保外部 lookup 无论如何都能精准命中。
     """
     result: Dict[str, Dict[str, Any]] = {}
-    symbols = [_tencent_symbol(c) for c in codes]
+    clean_map: Dict[str, str] = {}
+    for c in codes:
+        clean = _clean_code(c)
+        clean_map[clean] = c
+
+    clean_codes = list(clean_map.keys())
+    symbols = [_tencent_symbol(c) for c in clean_codes]
     chunk_size = 30
     for i in range(0, len(symbols), chunk_size):
         chunk = symbols[i:i + chunk_size]
@@ -197,66 +214,100 @@ def _batch_tencent_quote(codes: List[str], timeout: int = 4) -> Dict[str, Dict[s
             for line in resp.text.strip().split(";\n"):
                 parsed = _parse_tencent_line(line)
                 if parsed:
-                    result[parsed["code"]] = parsed
+                    parsed_code = parsed["code"]
+                    # 写入标准 clean_code key
+                    result[parsed_code] = parsed
+                    # 写入原始入参 code key（可能带 sh/sz 或 .SH）
+                    orig_code = clean_map.get(parsed_code)
+                    if orig_code:
+                        result[orig_code] = parsed
         except Exception as e:
             logger.error(f"腾讯批量行情拉取失败: {e}")
     return result
 
 
 # ─────────────────────────────────────────────
-# 场外开放式基金：每日收盘净值（T-1 日，非盘中实时）
+# 场外开放式基金：每日收盘净值（T-1 日/最新披露日，官方权威真实日增长率）
 # ─────────────────────────────────────────────
 _OTC_FUND_NAV_CACHE: Dict[str, Dict[str, Any]] = {}
-_OTC_FUND_NAV_CACHE_TTL_SECONDS = 6 * 3600  # 每日只公布一次净值，缓存 6 小时足够
+_OTC_FUND_NAV_CACHE_TTL_SECONDS = 3600  # 缓存 1 小时
 
 
 def get_otc_fund_nav(code: str) -> Optional[Dict[str, Any]]:
     """
-    获取场外开放式基金最新一日收盘单位净值与基金官方名称。
-    优先调用 Eastmoney 基金搜索接口（极速获取名称与最新净值），失败时走 ak.fund_open_fund_info_em。
-    返回 {"fundName": str, "navPrice": float, "navDate": str, "changePct": float} 或 None。
+    获取场外开放式基金最新一日收盘单位净值、基金官方名称与真实日增长率(%)。
+    优先调用东方财富官方历史净值接口 (api.fund.eastmoney.com/f10/lsjz)，100% 准确获取 JZZZL 日涨跌幅。
+    返回 {"fundName": str, "navPrice": float, "navDate": str, "changePct": float, "change": float, "prevClose": float} 或 None。
     """
-    cached = _OTC_FUND_NAV_CACHE.get(code)
+    clean = _clean_code(code)
+    cached = _OTC_FUND_NAV_CACHE.get(clean)
     if cached and (datetime.datetime.now().timestamp() - cached["_fetchedAt"]) < _OTC_FUND_NAV_CACHE_TTL_SECONDS:
         return cached["data"]
 
+    fund_name = None
+    # 1. 获取基金官方名称
     try:
-        url = f"http://fundsuggest.eastmoney.com/FundSearch/api/FundSearchAPI.ashx?m=1&key={code}"
-        resp = requests.get(url, timeout=3).json()
-        datas = resp.get("Datas", [])
+        search_url = f"http://fundsuggest.eastmoney.com/FundSearch/api/FundSearchAPI.ashx?m=1&key={clean}"
+        s_resp = requests.get(search_url, timeout=3).json()
+        datas = s_resp.get("Datas", [])
         if datas:
             item = datas[0]
             base = item.get("FundBaseInfo", {})
-            name = item.get("NAME") or base.get("SHORTNAME")
-            dwjz = base.get("DWJZ")
-            fsrq = base.get("FSRQ")
-            rzdf = _safe_float(base.get("RZDF") or base.get("JZZZL"))
-            if name and dwjz is not None:
+            fund_name = item.get("NAME") or base.get("SHORTNAME")
+    except Exception:
+        pass
+
+    # 2. 优先调用东方财富官方历史净值接口（100% 返回准确的 FSRQ 净值日期、DWJZ 最新净值、JZZZL 日增长率 %）
+    try:
+        lsjz_url = f"http://api.fund.eastmoney.com/f10/lsjz?fundCode={clean}&pageIndex=1&pageSize=2"
+        headers = {"Referer": "http://fundf10.eastmoney.com/"}
+        resp = requests.get(lsjz_url, headers=headers, timeout=4).json()
+        ls_list = resp.get("Data", {}).get("LSJZList", [])
+        if ls_list and len(ls_list) > 0:
+            latest = ls_list[0]
+            dwjz = _safe_float(latest.get("DWJZ"))
+            fsrq = latest.get("FSRQ")
+            jzzzl = _safe_float(latest.get("JZZZL"))
+
+            if dwjz is not None and dwjz > 0:
+                change_pct = jzzzl if jzzzl is not None else 0.0
+                # 精确计算单价差额 (change) 与上一期基准净值 (prevClose)
+                delta_p = round(dwjz * (change_pct / (100.0 + change_pct)), 4) if change_pct != 0 else 0.0
+                prev_close = round(dwjz - delta_p, 4)
+
                 data = {
-                    "fundName": name,
+                    "fundName": fund_name or clean,
                     "navPrice": float(dwjz),
                     "navDate": str(fsrq) if fsrq else None,
-                    "changePct": rzdf,
+                    "changePct": float(change_pct),
+                    "change": delta_p,
+                    "prevClose": prev_close,
                 }
-                _OTC_FUND_NAV_CACHE[code] = {"data": data, "_fetchedAt": datetime.datetime.now().timestamp()}
+                _OTC_FUND_NAV_CACHE[clean] = {"data": data, "_fetchedAt": datetime.datetime.now().timestamp()}
                 return data
     except Exception as e:
-        logger.warning(f"Eastmoney 基金极速搜索失败 [{code}]: {e}")
+        logger.warning(f"Eastmoney lsjz 净值接口调用失败 [{clean}]: {e}")
 
+    # 3. 兜底尝试 ak.fund_open_fund_info_em
     try:
-        df = ak.fund_open_fund_info_em(symbol=code, indicator="单位净值走势")
+        df = ak.fund_open_fund_info_em(symbol=clean, indicator="单位净值走势")
         if df is not None and not df.empty:
             last = df.iloc[-1]
+            dwjz = float(last["单位净值"])
+            change_pct = float(last["日增长率"]) if pd.notna(last["日增长率"]) else 0.0
+            delta_p = round(dwjz * (change_pct / (100.0 + change_pct)), 4) if change_pct != 0 else 0.0
             data = {
-                "fundName": None,
-                "navPrice": float(last["单位净值"]),
+                "fundName": fund_name or clean,
+                "navPrice": dwjz,
                 "navDate": str(last["净值日期"]),
-                "changePct": float(last["日增长率"]) if pd.notna(last["日增长率"]) else None,
+                "changePct": change_pct,
+                "change": delta_p,
+                "prevClose": round(dwjz - delta_p, 4),
             }
-            _OTC_FUND_NAV_CACHE[code] = {"data": data, "_fetchedAt": datetime.datetime.now().timestamp()}
+            _OTC_FUND_NAV_CACHE[clean] = {"data": data, "_fetchedAt": datetime.datetime.now().timestamp()}
             return data
     except Exception as e:
-        logger.error(f"场外基金净值拉取失败 [{code}]: {e}")
+        logger.error(f"场外基金净值拉取失败 [{clean}]: {e}")
 
     return None
 
