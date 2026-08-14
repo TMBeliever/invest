@@ -92,6 +92,91 @@ function parseActionBlocks(rawContent: string): { parts: Array<{ type: "text" | 
   return { parts };
 }
 
+export async function copyToClipboard(text: string): Promise<boolean> {
+  if (!text) return false;
+  // 1. 尝试现代标准的 Navigator Clipboard API
+  if (typeof navigator !== "undefined" && navigator.clipboard && typeof navigator.clipboard.writeText === "function") {
+    try {
+      await navigator.clipboard.writeText(text);
+      return true;
+    } catch (err) {
+      console.warn("navigator.clipboard failed, falling back to execCommand:", err);
+    }
+  }
+
+  // 2. 工业级通用降级：隐藏 Textarea + document.execCommand('copy')
+  try {
+    const textArea = document.createElement("textarea");
+    textArea.value = text;
+    textArea.style.position = "fixed";
+    textArea.style.top = "0";
+    textArea.style.left = "0";
+    textArea.style.width = "2em";
+    textArea.style.height = "2em";
+    textArea.style.padding = "0";
+    textArea.style.border = "none";
+    textArea.style.outline = "none";
+    textArea.style.boxShadow = "none";
+    textArea.style.background = "transparent";
+    textArea.style.opacity = "0";
+    document.body.appendChild(textArea);
+    textArea.focus();
+    textArea.select();
+    const successful = document.execCommand("copy");
+    document.body.removeChild(textArea);
+    return successful;
+  } catch (err) {
+    console.error("Fallback execCommand copy failed:", err);
+    return false;
+  }
+}
+
+export function cleanMessageText(raw: string): string {
+  if (!raw) return "";
+  // 过滤内部 Action 卡片 JSON 结构块，使复制到剪贴板的内容干净纯粹
+  return raw.replace(/```(?:action:investscope|json:import_assets)[\s\S]*?```/g, "").trim();
+}
+
+function CodeBlock({ code, language }: { code: string; language: string }) {
+  const [copied, setCopied] = useState(false);
+
+  const handleCopyCode = async () => {
+    const ok = await copyToClipboard(code);
+    if (ok) {
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    }
+  };
+
+  return (
+    <div className="my-2.5 rounded-xl overflow-hidden border border-white/10 bg-[#121318] text-gray-200">
+      <div className="flex items-center justify-between px-3 py-1.5 bg-white/5 border-b border-white/5 text-[11px] text-default-400 select-none">
+        <span className="font-mono text-[10px] uppercase text-primary/90 font-semibold">{language || "code"}</span>
+        <button
+          onClick={handleCopyCode}
+          className="flex items-center gap-1 px-2 py-0.5 rounded hover:bg-white/10 hover:text-white transition-colors text-[10px] text-default-400"
+          title="复制代码"
+        >
+          {copied ? (
+            <>
+              <Check className="w-3 h-3 text-emerald-400" />
+              <span className="text-emerald-400 font-medium">已复制</span>
+            </>
+          ) : (
+            <>
+              <Copy className="w-3 h-3" />
+              <span>复制代码</span>
+            </>
+          )}
+        </button>
+      </div>
+      <pre className="p-3 overflow-x-auto text-[11px] font-mono leading-relaxed text-gray-300 select-text">
+        <code>{code}</code>
+      </pre>
+    </div>
+  );
+}
+
 function MarkdownTextRenderer({ content }: { content: string }) {
   if (!content) return null;
 
@@ -164,6 +249,23 @@ function MarkdownTextRenderer({ content }: { content: string }) {
     const line = lines[index];
     const trimmed = line.trim();
 
+    // 1. 代码块处理
+    if (trimmed.startsWith("```")) {
+      if (inTable) flushTable(`tb-${index}`);
+      const lang = trimmed.slice(3).trim();
+      const codeLines: string[] = [];
+      index++;
+      while (index < lines.length && !lines[index].trim().startsWith("```")) {
+        codeLines.push(lines[index]);
+        index++;
+      }
+      elements.push(
+        <CodeBlock key={`code-${index}`} code={codeLines.join("\n")} language={lang} />
+      );
+      continue;
+    }
+
+    // 2. 表格处理
     if (trimmed.startsWith("|") && trimmed.endsWith("|")) {
       const cells = trimmed
         .split("|")
@@ -867,10 +969,13 @@ export function AIAssistantDrawer() {
     };
   }, [currentSessionId, selectedModel, selectedMode, messages]);
 
-  const handleCopy = (id: string, text: string) => {
-    navigator.clipboard.writeText(text);
-    setCopiedId(id);
-    setTimeout(() => setCopiedId(null), 2000);
+  const handleCopy = async (id: string, text: string) => {
+    const cleanText = cleanMessageText(text) || text;
+    const ok = await copyToClipboard(cleanText);
+    if (ok) {
+      setCopiedId(id);
+      setTimeout(() => setCopiedId(null), 2000);
+    }
   };
 
   return (
@@ -883,14 +988,14 @@ export function AIAssistantDrawer() {
         >
           <div className="relative">
             <Bot className="w-5 h-5" />
-            <span className="absolute -top-1 -right-1 w-2 h-2 rounded-full bg-emerald-400 animate-ping" />
+            <span className="absolute -top-1 -right-1 w-2.5 h-2.5 bg-emerald-400 rounded-full border-2 border-[#0e0f12] animate-pulse" />
           </div>
-          <span>InvestScope AI 顾问</span>
-          <Sparkles className="w-3.5 h-3.5 text-amber-300 group-hover:rotate-12 transition-transform" />
+          <span className="font-semibold tracking-wide">AI 投资顾问</span>
+          <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-white/20 text-white/90">PRO</span>
         </button>
       )}
 
-      {/* 展开的可拖拽拉伸 AI 对话抽屉 */}
+      {/* AI 助手全站全局抽屉窗口 */}
       {isOpen && (
         <div
           style={{
@@ -899,174 +1004,230 @@ export function AIAssistantDrawer() {
             width: `${size.width}px`,
             height: isMinimized ? "60px" : `${size.height}px`,
           }}
-          className="fixed z-50 bg-[#121316] border border-primary/30 shadow-2xl rounded-2xl flex flex-col overflow-hidden transition-shadow duration-300"
+          className={`fixed z-50 flex flex-col bg-[#0e0f12]/95 backdrop-blur-xl border border-white/15 rounded-2xl shadow-2xl shadow-black/80 overflow-hidden transition-shadow select-none ${
+            isDragging ? "shadow-primary/30 ring-1 ring-primary/40" : ""
+          }`}
         >
-          {/* 8 方向拉伸 Edge Handles */}
+          {/* 8 方向拉伸控制把手 (仅在非最小化时生效) */}
           {!isMinimized && (
             <>
-              <div onMouseDown={(e) => handleResizeMouseDown("nw", e)} className="absolute top-0 left-0 w-3.5 h-3.5 cursor-nwse-resize z-20 hover:bg-primary/30 rounded-tl select-none" />
-              <div onMouseDown={(e) => handleResizeMouseDown("ne", e)} className="absolute top-0 right-0 w-3.5 h-3.5 cursor-nesw-resize z-20 hover:bg-primary/30 rounded-tr select-none" />
-              <div onMouseDown={(e) => handleResizeMouseDown("sw", e)} className="absolute bottom-0 left-0 w-3.5 h-3.5 cursor-nesw-resize z-20 hover:bg-primary/30 rounded-bl select-none" />
-              <div onMouseDown={(e) => handleResizeMouseDown("se", e)} className="absolute bottom-0 right-0 w-3.5 h-3.5 cursor-nwse-resize z-20 hover:bg-primary/30 rounded-br select-none" />
-              <div onMouseDown={(e) => handleResizeMouseDown("n", e)} className="absolute top-0 left-4 right-4 h-1.5 cursor-ns-resize z-10 hover:bg-primary/30 select-none" />
-              <div onMouseDown={(e) => handleResizeMouseDown("s", e)} className="absolute bottom-0 left-4 right-4 h-1.5 cursor-ns-resize z-10 hover:bg-primary/30 select-none" />
-              <div onMouseDown={(e) => handleResizeMouseDown("w", e)} className="absolute left-0 top-4 bottom-4 w-1.5 cursor-ew-resize z-10 hover:bg-primary/30 select-none" />
-              <div onMouseDown={(e) => handleResizeMouseDown("e", e)} className="absolute right-0 top-4 bottom-4 w-1.5 cursor-ew-resize z-10 hover:bg-primary/30 select-none" />
+              <div
+                onMouseDown={(e) => handleResizeMouseDown("n", e)}
+                className="absolute top-0 left-0 right-0 h-2 cursor-n-resize z-30"
+              />
+              <div
+                onMouseDown={(e) => handleResizeMouseDown("s", e)}
+                className="absolute bottom-0 left-0 right-0 h-2 cursor-s-resize z-30"
+              />
+              <div
+                onMouseDown={(e) => handleResizeMouseDown("w", e)}
+                className="absolute top-0 bottom-0 left-0 w-2 cursor-w-resize z-30"
+              />
+              <div
+                onMouseDown={(e) => handleResizeMouseDown("e", e)}
+                className="absolute top-0 bottom-0 right-0 w-2 cursor-e-resize z-30"
+              />
+              <div
+                onMouseDown={(e) => handleResizeMouseDown("nw", e)}
+                className="absolute top-0 left-0 w-3.5 h-3.5 cursor-nw-resize z-30"
+              />
+              <div
+                onMouseDown={(e) => handleResizeMouseDown("ne", e)}
+                className="absolute top-0 right-0 w-3.5 h-3.5 cursor-ne-resize z-30"
+              />
+              <div
+                onMouseDown={(e) => handleResizeMouseDown("sw", e)}
+                className="absolute bottom-0 left-0 w-3.5 h-3.5 cursor-sw-resize z-30"
+              />
+              <div
+                onMouseDown={(e) => handleResizeMouseDown("se", e)}
+                className="absolute bottom-0 right-0 w-3.5 h-3.5 cursor-se-resize z-30"
+              />
             </>
           )}
 
-          {/* Header 拖拽抓手栏 */}
+          {/* 顶部标题栏 (支持拖拽 + 最小化 + 关闭) */}
           <div
             onMouseDown={handleHeaderMouseDown}
-            className="p-3.5 border-b border-white/10 flex items-center justify-between bg-[#1a1c22] cursor-grab active:cursor-grabbing select-none"
+            className="px-4 py-3 border-b border-white/10 bg-[#16181e]/90 flex items-center justify-between cursor-move select-none shrink-0"
           >
-            <div className="flex items-center gap-2.5">
-              <GripHorizontal className="w-4 h-4 text-default-500 opacity-60" />
-              <div className="p-1 rounded-lg bg-primary/20 text-primary">
+            <div className="flex items-center gap-2">
+              <div className="w-7 h-7 rounded-lg bg-primary/20 text-primary flex items-center justify-center font-bold">
                 <Bot className="w-4 h-4" />
               </div>
               <div>
                 <div className="flex items-center gap-1.5">
-                  <span className="text-xs font-bold tracking-tight text-white">
-                    {selectedMode === "general" ? "InvestScope 通用智能助手" : "InvestScope AI 投资顾问"}
+                  <span className="text-xs font-bold text-white tracking-wide">InvestScope AI 顾问</span>
+                  <span className="text-[9px] px-1.5 py-0.2 bg-primary/20 text-primary rounded font-mono font-medium">
+                    AGENT
                   </span>
-                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
                 </div>
-                <span className="text-[10px] text-default-400">
-                  {selectedMode === "general" ? "全领域通用 · 编程创作 · 逻辑推理" : "持仓死锁 · 智能压缩 · 红利决策"}
-                </span>
+                <div className="text-[10px] text-default-400 flex items-center gap-1">
+                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-400" />
+                  <span>全景 X 光穿透与决策大模型已就绪</span>
+                </div>
               </div>
             </div>
 
             <div className="flex items-center gap-1">
               <button
-                onClick={handleNewSession}
-                title="新建对话"
-                className="p-1.5 rounded-md text-default-400 hover:text-foreground hover:bg-white/10 transition-colors flex items-center gap-1 text-[11px]"
-              >
-                <Plus className="w-3.5 h-3.5 text-primary" />
-                <span className="hidden sm:inline">新对话</span>
-              </button>
-              <button
                 onClick={() => setShowHistory(!showHistory)}
-                title="历史对话"
-                className={`p-1.5 rounded-md transition-colors ${
-                  showHistory ? "bg-primary/20 text-primary" : "text-default-400 hover:text-foreground hover:bg-white/10"
+                className={`p-1.5 rounded-lg hover:bg-white/10 transition-colors ${
+                  showHistory ? "bg-white/10 text-primary" : "text-default-400 hover:text-white"
                 }`}
+                title="历史会话"
               >
                 <History className="w-3.5 h-3.5" />
               </button>
               <button
+                onClick={() => handleNewSession()}
+                className="p-1.5 rounded-lg hover:bg-white/10 text-default-400 hover:text-white transition-colors"
+                title="新建对话"
+              >
+                <Plus className="w-3.5 h-3.5" />
+              </button>
+              <button
                 onClick={() => setIsMinimized(!isMinimized)}
+                className="p-1.5 rounded-lg hover:bg-white/10 text-default-400 hover:text-white transition-colors"
                 title={isMinimized ? "展开窗口" : "最小化"}
-                className="p-1 rounded-md text-default-400 hover:text-foreground hover:bg-white/10 transition-colors"
               >
                 {isMinimized ? <Maximize2 className="w-3.5 h-3.5" /> : <Minimize2 className="w-3.5 h-3.5" />}
               </button>
               <button
                 onClick={() => setIsOpen(false)}
+                className="p-1.5 rounded-lg hover:bg-white/10 text-default-400 hover:text-red-400 transition-colors"
                 title="关闭"
-                className="p-1 rounded-md text-default-400 hover:text-foreground hover:bg-white/10 transition-colors"
               >
-                <X className="w-4 h-4" />
+                <X className="w-3.5 h-3.5" />
               </button>
             </div>
           </div>
 
+          {/* 抽屉主体内容 (最小化时隐藏) */}
           {!isMinimized && (
             <>
-              {/* 模式切换与模型选择器栏 */}
-              <div className="px-3.5 py-2 bg-[#16181f] border-b border-white/5 flex items-center justify-between gap-2 text-xs">
-                {/* 双模式切换 Pills */}
-                <div className="flex items-center p-0.5 bg-[#101114] rounded-lg border border-white/5">
+              {/* 控制面板：模型选择器 + 专业/通用模式切换器 */}
+              <div className="px-3 py-2 border-b border-white/10 bg-[#121318] flex items-center justify-between gap-2 shrink-0">
+                {/* 模式选择器 */}
+                <div className="flex items-center bg-white/5 p-0.5 rounded-lg border border-white/10 text-[11px]">
                   <button
-                    type="button"
                     onClick={() => handleModeChange("finance")}
-                    className={`px-2.5 py-1 rounded-md text-[11px] font-medium transition-all flex items-center gap-1 ${
+                    className={`flex items-center gap-1 px-2 py-1 rounded-md transition-all font-medium ${
                       selectedMode === "finance"
-                        ? "bg-primary/20 text-primary border border-primary/30 shadow-xs"
+                        ? "bg-primary text-primary-foreground shadow-sm"
                         : "text-default-400 hover:text-white"
                     }`}
                   >
-                    <Briefcase className="w-3 h-3" />
-                    <span>理财专业</span>
+                    <Sparkles className="w-3 h-3" />
+                    <span>投资决策</span>
                   </button>
                   <button
-                    type="button"
                     onClick={() => handleModeChange("general")}
-                    className={`px-2.5 py-1 rounded-md text-[11px] font-medium transition-all flex items-center gap-1 ${
+                    className={`flex items-center gap-1 px-2 py-1 rounded-md transition-all font-medium ${
                       selectedMode === "general"
-                        ? "bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 shadow-xs"
+                        ? "bg-primary text-primary-foreground shadow-sm"
                         : "text-default-400 hover:text-white"
                     }`}
                   >
                     <Globe className="w-3 h-3" />
-                    <span>通识全能</span>
+                    <span>通用助手</span>
                   </button>
                 </div>
 
-                {/* 模型选择下拉 */}
-                <div className="relative">
+                {/* 模型下拉选择器 */}
+                <div className="flex items-center gap-1 text-[11px]">
+                  <Cpu className="w-3 h-3 text-default-400" />
                   <select
                     value={selectedModel}
                     onChange={(e) => handleModelChange(e.target.value)}
-                    className="bg-[#20222a] text-white text-[11px] font-medium rounded-lg px-2.5 py-1 pr-6 border border-white/10 focus:border-primary focus:outline-none appearance-none cursor-pointer hover:border-primary/50 transition-colors"
+                    className="bg-transparent border-none text-default-300 hover:text-white text-[11px] focus:outline-none cursor-pointer pr-1"
                   >
                     {AVAILABLE_MODELS.map((m) => (
-                      <option key={m.id} value={m.id} className="bg-[#1a1c22] text-white">
-                        {m.name}
+                      <option key={m.id} value={m.id} className="bg-[#1c1e24] text-gray-200">
+                        {m.name} ({m.tag})
                       </option>
                     ))}
                   </select>
-                  <ChevronDown className="w-3 h-3 text-default-400 absolute right-2 top-1/2 -translate-y-1/2 pointer-events-none" />
                 </div>
               </div>
-              {/* 历史对话列表侧栏视图 */}
-              {showHistory ? (
-                <div className="flex-1 p-3 overflow-y-auto bg-[#141519] space-y-2 text-xs">
-                  <div className="flex items-center justify-between pb-2 border-b border-white/10 text-default-400 text-[11px]">
-                    <span>📜 历史对话记录 ({sessions.length})</span>
-                    <button onClick={handleNewSession} className="text-primary hover:underline flex items-center gap-1 font-medium">
-                      <Plus className="w-3 h-3" /> 新建对话
+
+              {/* 历史会话管理侧滑/下拉面板 */}
+              {showHistory && (
+                <div className="p-3 border-b border-white/10 bg-[#14151b] max-h-48 overflow-y-auto space-y-1.5 animate-in fade-in duration-200 shrink-0">
+                  <div className="flex items-center justify-between text-[11px] text-default-400 pb-1 border-b border-white/5 font-medium">
+                    <span>历史会话记录</span>
+                    <button
+                      onClick={() => handleNewSession()}
+                      className="text-primary hover:underline flex items-center gap-0.5"
+                    >
+                      <Plus className="w-3 h-3" /> 新建
                     </button>
                   </div>
                   {sessions.length === 0 ? (
-                    <div className="p-8 text-center text-default-500 text-xs">暂无历史对话记录</div>
+                    <div className="text-center py-4 text-xs text-default-500">暂无历史会话</div>
                   ) : (
-                    sessions.map((s) => (
+                    sessions.map((sess) => (
                       <div
-                        key={s.id}
-                        onClick={() => loadSession(s.id)}
-                        className={`p-2.5 rounded-xl border transition-all cursor-pointer flex items-center justify-between group ${
-                          currentSessionId === s.id
-                            ? "bg-primary/15 border-primary/40 text-primary font-medium"
-                            : "bg-[#1c1e24] border-white/5 text-gray-300 hover:bg-white/10"
+                        key={sess.id}
+                        onClick={() => loadSession(sess.id)}
+                        className={`group flex items-center justify-between px-2.5 py-1.5 rounded-lg text-xs cursor-pointer transition-all ${
+                          sess.id === currentSessionId
+                            ? "bg-primary/20 text-primary font-medium"
+                            : "hover:bg-white/5 text-gray-300"
                         }`}
                       >
-                        <div className="flex items-center gap-2 min-w-0 pr-2">
-                          <MessageSquare className="w-3.5 h-3.5 shrink-0 opacity-70" />
-                          <span className="truncate text-xs">{s.title || "新对话"}</span>
+                        <div className="flex items-center gap-2 truncate pr-2">
+                          <MessageSquare className="w-3.5 h-3.5 shrink-0" />
+                          <span className="truncate">{sess.title || "新对话"}</span>
                         </div>
-                        <div className="flex items-center gap-2 shrink-0">
-                          <span className="text-[10px] text-default-500">{s.updated_at?.slice(5, 16)}</span>
-                          <button
-                            onClick={(e) => handleDeleteSession(s.id, e)}
-                            className="opacity-0 group-hover:opacity-100 p-1 hover:text-rose-400 transition-opacity"
-                          >
-                            <Trash2 className="w-3.5 h-3.5" />
-                          </button>
-                        </div>
+                        <button
+                          onClick={(e) => handleDeleteSession(sess.id, e)}
+                          className="opacity-0 group-hover:opacity-100 p-1 hover:text-red-400 transition-opacity"
+                          title="删除会话"
+                        >
+                          <Trash2 className="w-3 h-3" />
+                        </button>
                       </div>
                     ))
                   )}
                 </div>
-              ) : (
-                <>
-                  {/* 消息列表视图 (支持自由选中复制) */}
-                  <div className="flex-1 p-4 overflow-y-auto space-y-3.5 text-xs bg-[#121316] select-text selection:bg-primary/30 selection:text-white">
-                    {messages.map((msg, idx) => {
+              )}
+
+              {/* 消息对话展示流 */}
+              <div className="flex-1 overflow-y-auto p-4 space-y-4">
+                {messages.length === 0 ? (
+                  <div className="h-full flex flex-col items-center justify-center text-center px-4 py-8 text-default-400 select-none">
+                    <div className="w-12 h-12 rounded-2xl bg-gradient-to-tr from-primary/20 via-blue-500/20 to-indigo-500/20 text-primary flex items-center justify-center mb-3 shadow-inner">
+                      <Bot className="w-6 h-6" />
+                    </div>
+                    <div className="text-sm font-bold text-white mb-1">
+                      {selectedMode === "finance" ? "InvestScope 投资决策顾问" : "通用智能 AI 助手"}
+                    </div>
+                    <div className="text-xs text-default-400 max-w-xs leading-relaxed mb-6">
+                      {selectedMode === "finance"
+                        ? "已深度接入您的资产底层 X 光穿透、宏观压力测试、个股秒级行情与杜邦财报。随时向我提问或上传截图！"
+                        : "具备全方位的科学常识、文本创作、代码排错与逻辑推理能力。"}
+                    </div>
+
+                    {/* 快捷问答 Chip */}
+                    <div className="w-full space-y-2 max-w-xs text-left">
+                      {currentContextPrompts.prompts.slice(0, 3).map((promptText, idx) => (
+                        <button
+                          key={idx}
+                          onClick={() => handleSend(promptText)}
+                          className="w-full p-2.5 rounded-xl border border-white/10 bg-white/5 hover:bg-white/10 hover:border-primary/40 text-xs text-gray-300 hover:text-white transition-all flex items-center gap-2 group text-left"
+                        >
+                          <Sparkles className="w-3.5 h-3.5 text-primary group-hover:scale-110 transition-transform shrink-0" />
+                          <span className="truncate flex-1">{promptText}</span>
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                ) : (
+                  <div className="space-y-4">
+                    {messages.map((msg, index) => {
                       const isUser = msg.role === "user";
-                      const isLastAssistant = !isUser && idx === messages.length - 1;
+                      const isLastAssistant = !isUser && index === messages.length - 1;
 
                       return (
                         <div
@@ -1079,7 +1240,7 @@ export function AIAssistantDrawer() {
                             </div>
                           )}
 
-                          <div className="group relative max-w-[85%] select-text">
+                          <div className="group relative max-w-[88%] select-text">
                             <div
                               className={`p-3 rounded-2xl leading-relaxed select-text ${
                                 isUser
@@ -1107,10 +1268,35 @@ export function AIAssistantDrawer() {
                               {isLastAssistant && loading && (
                                 <span className="inline-block w-1.5 h-3.5 ml-1 bg-emerald-400 animate-pulse align-middle" />
                               )}
+
+                              {/* 助手消息内置复制底栏 */}
+                              {!isUser && msg.content && (
+                                <div className="mt-2.5 pt-1.5 border-t border-white/10 flex items-center justify-between text-[10px] text-default-400 select-none">
+                                  <span className="opacity-60 text-[9px]">InvestScope AI</span>
+                                  <button
+                                    onClick={() => handleCopy(msg.id, msg.content)}
+                                    className="px-2 py-0.5 rounded hover:bg-white/10 hover:text-white transition-all flex items-center gap-1 text-default-400 active:scale-95"
+                                    title="复制全文"
+                                  >
+                                    {copiedId === msg.id ? (
+                                      <>
+                                        <Check className="w-3 h-3 text-emerald-400" />
+                                        <span className="text-emerald-400 font-medium">已复制</span>
+                                      </>
+                                    ) : (
+                                      <>
+                                        <Copy className="w-3 h-3" />
+                                        <span>复制全文</span>
+                                      </>
+                                    )}
+                                  </button>
+                                </div>
+                              )}
                             </div>
 
-                            {!isUser && msg.content && (
-                              <div className="opacity-0 group-hover:opacity-100 transition-opacity absolute -bottom-5 left-1 flex items-center gap-1 text-[10px] text-default-400">
+                            {/* 用户消息悬浮复制按钮 */}
+                            {isUser && msg.content && (
+                              <div className="opacity-0 group-hover:opacity-100 transition-opacity flex justify-end mt-1 pr-1">
                                 <button
                                   onClick={() => handleCopy(msg.id, msg.content)}
                                   className="hover:text-primary transition-colors flex items-center gap-0.5"
@@ -1133,6 +1319,8 @@ export function AIAssistantDrawer() {
 
                     <div ref={messagesEndRef} />
                   </div>
+                )}
+              </div>
 
                   {/* 上下文感知的 Smart Prompt Chips 推荐提问 */}
                   {messages.length <= 2 && (
@@ -1259,8 +1447,6 @@ export function AIAssistantDrawer() {
                       )}
                     </form>
                   </div>
-                </>
-              )}
             </>
           )}
         </div>
