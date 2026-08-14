@@ -359,17 +359,23 @@ export function NotificationSettings() {
                   onChange={() => toggleChannel("TELEGRAM")}
                   className="accent-sky-400 w-4 h-4 rounded"
                 />
-                <label htmlFor="ch-tg" className="text-xs font-bold text-white cursor-pointer flex items-center gap-1">
+                <label htmlFor="ch-tg" className="text-xs font-bold text-white cursor-pointer flex items-center gap-1.5">
                   <SendHorizontal className="w-3.5 h-3.5 text-sky-400" />
-                  <span>✈️ Telegram 机器人 (HTML 富文本消息)</span>
+                  <span>✈️ Telegram 机器人 (HTML 研报 & 双向 Agent 对话)</span>
+                  <span className="text-[10px] px-1.5 py-0.2 rounded bg-sky-500/20 text-sky-300 border border-sky-500/30 font-semibold">
+                    ⚡ 支持双向对话
+                  </span>
                 </label>
                 <HelpTooltip
-                  title="✈️ Telegram 机器人极速配置 3 步法"
+                  title="✈️ Telegram 机器人极速配置与双向对话"
                   content={
                     <div className="space-y-1.5">
                       <div><b>第 1 步：创建机器人</b><br />在 TG 搜索 <code>@BotFather</code> 发送 <code>/newbot</code>，获取您的专属 <b>Bot Token</b>。</div>
                       <div><b>第 2 步：激活私聊 (必做)</b><br />在 TG 搜索您刚创建的 Bot 名称，点击底部的 <b>「Start」</b> 授权接收消息。</div>
                       <div><b>第 3 步：获取 Chat ID</b><br />在 TG 搜索 <code>@userinfobot</code> 发送任意文字，回复中的 <code>Id: xxx</code> 即为 <b>Chat ID</b>。</div>
+                      <div className="pt-1 border-t border-white/10 text-sky-300 font-semibold">
+                        💡 配置后即可直接向 Bot 发送 /summary, /xray, /alerts, /morning 或任意投资问题！
+                      </div>
                     </div>
                   }
                 />

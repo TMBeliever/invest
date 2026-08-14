@@ -997,6 +997,45 @@ class StorageDB:
             conn.commit()
             return True
 
+    def find_user_by_telegram_chat_id(self, chat_id: str) -> Optional[Dict[str, Any]]:
+        """根据 Telegram Chat ID 反查对应的 InvestScope 用户信息"""
+        chat_id_str = str(chat_id).strip()
+        with self._get_conn() as conn:
+            conn.row_factory = sqlite3.Row
+            cursor = conn.cursor()
+            cursor.execute(
+                "SELECT * FROM user_subscriptions WHERE telegram_chat_id = ? OR telegram_chat_id = ?",
+                (chat_id_str, f"@{chat_id_str}")
+            )
+            row = cursor.fetchone()
+            if not row:
+                # 尝试查用户表 (若只有单一用户或默认用户)
+                cursor.execute("SELECT * FROM users LIMIT 1")
+                u_row = cursor.fetchone()
+                if u_row:
+                    return {"id": u_row["id"], "username": u_row["username"]}
+                return None
+            
+            user_id = row["user_id"]
+            cursor.execute("SELECT * FROM users WHERE id = ?", (user_id,))
+            u_row = cursor.fetchone()
+            if u_row:
+                return dict(u_row)
+            return {"id": user_id, "username": "Investor"}
+
+    def get_active_telegram_bot_configs(self) -> List[Dict[str, Any]]:
+        """获取所有配置了 Telegram Bot Token 的有效订阅记录"""
+        with self._get_conn() as conn:
+            conn.row_factory = sqlite3.Row
+            cursor = conn.cursor()
+            cursor.execute("""
+            SELECT user_id, telegram_bot_token, telegram_chat_id, telegram_api_host 
+            FROM user_subscriptions 
+            WHERE telegram_bot_token IS NOT NULL AND telegram_bot_token != ''
+            """)
+            rows = cursor.fetchall()
+            return [dict(r) for r in rows]
+
 storage_db = StorageDB()
 
 

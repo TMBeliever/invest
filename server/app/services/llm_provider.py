@@ -22,6 +22,17 @@ class BaseLLMProvider(ABC):
         """流式生成 AI 回答文字 (支持 Agentic Function Calling)"""
         pass
 
+    def chat_complete(
+        self,
+        messages: List[Dict[str, Any]],
+        system_prompt: str,
+        user_id: Optional[str] = None,
+        enable_tools: bool = True,
+    ) -> str:
+        """非流式直接获取完整回答 (适用于 Webhook / Telegram / 机器人回复)"""
+        chunks = list(self.stream_chat(messages, system_prompt, user_id=user_id, enable_tools=enable_tools))
+        return "".join(chunks)
+
 
 class OpenAIProvider(BaseLLMProvider):
     def __init__(self, api_key: Optional[str] = None, base_url: Optional[str] = None, model: Optional[str] = None):
