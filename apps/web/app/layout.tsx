@@ -12,6 +12,14 @@ const inter = Inter({
 export const metadata: Metadata = {
   title: "InvestScope — 高胜率投资决策平台",
   description: "数据驱动的投资分析工具，专注A股红利策略，追求10%年化稳健增值",
+  icons: {
+    icon: [
+      { url: "/icon.svg", type: "image/svg+xml" },
+      { url: "/favicon.svg", type: "image/svg+xml" },
+    ],
+    shortcut: "/icon.svg",
+    apple: "/icon.svg",
+  },
 };
 
 export default function RootLayout({

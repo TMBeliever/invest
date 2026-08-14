@@ -399,8 +399,18 @@ export default function DividendCalendarPage() {
         </div>
 
         {filteredEvents.length === 0 ? (
-          <div className="py-12 text-center text-xs text-default-400">
-            暂无匹配的现金流事件，请切换筛选条件
+          <div className="py-12 text-center space-y-2">
+            <div className="text-xs text-default-400">
+              {selectedMonth ? `【${selectedMonth}】当月暂无${filterType === "STOCK" ? "股票分红" : filterType === "DEPOSIT" ? "定存利息" : ""}到账事件` : "暂无匹配的现金流事件，请切换筛选条件"}
+            </div>
+            {selectedMonth && (
+              <button
+                onClick={() => setSelectedMonth(null)}
+                className="text-xs text-primary hover:underline cursor-pointer"
+              >
+                点击清除单月筛选，查看全年 12 个月全部到账日程
+              </button>
+            )}
           </div>
         ) : (
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">

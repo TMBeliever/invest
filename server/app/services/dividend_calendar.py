@@ -357,20 +357,41 @@ class DividendCalendarService:
                         monthly_buckets[mat_month]["depositInterest"] += annual_interest
                         monthly_buckets[mat_month]["totalCashflow"] += annual_interest
                 else:
-                    # 活期或无期限理财：按月平摊
+                    # 活期或无期限稳健理财：按月平摊并生成具体月度计息事件
                     monthly_payout = round(annual_interest / 12.0, 2)
                     for m in months_list:
-                        monthly_buckets[m]["depositInterest"] += monthly_payout
-                        monthly_buckets[m]["totalCashflow"] += monthly_payout
+                        m_year = int(m[:4])
+                        m_month = int(m[5:7])
+                        pay_date = datetime.date(m_year, m_month, min(base_day, 28))
+                        if pay_date < today_date:
+                            continue
 
-        # ─── 4. 统计汇总与财务自由覆盖度 ──────────────────────────────
+                        event = {
+                            "id": f"evt-dep-{asset.get('id', 'dep')}-{m}",
+                            "month": m,
+                            "date": str(pay_date),
+                            "assetType": "DEPOSIT_INTEREST",
+                            "symbol": None,
+                            "name": name,
+                            "amount": monthly_payout,
+                            "principal": principal,
+                            "interestRate": rate,
+                            "description": f"{name} 稳健月度计息 (本金 ¥{principal:,.0f}，年化 {rate}%，月息 ¥{monthly_payout:,.2f})",
+                            "status": "CONTRACTUAL",
+                            "statusLabel": "按月预估计息",
+                        }
+                        all_events.append(event)
+                        monthly_buckets[m]["events"].append(event)
+
+        # ─── 4. 统计汇总与财务自由覆盖度 (严格基于事件真实加总，保证100%账实一致) ───
         monthly_series = []
         total_annual_cashflow = 0.0
         for m in months_list:
             b = monthly_buckets[m]
-            b["stockDividends"] = round(b["stockDividends"], 2)
-            b["depositInterest"] = round(b["depositInterest"], 2)
-            b["totalCashflow"] = round(b["totalCashflow"], 2)
+            b_events = b.get("events", [])
+            b["stockDividends"] = round(sum(e["amount"] for e in b_events if e.get("assetType") == "STOCK_DIVIDEND"), 2)
+            b["depositInterest"] = round(sum(e["amount"] for e in b_events if e.get("assetType") == "DEPOSIT_INTEREST"), 2)
+            b["totalCashflow"] = round(b["stockDividends"] + b["depositInterest"], 2)
             total_annual_cashflow += b["totalCashflow"]
             monthly_series.append(b)
 
