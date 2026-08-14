@@ -29,8 +29,10 @@ const CATEGORY_META: Record<AssetCategory, { label: string; color: string; icon:
   OTHER: { label: "其他", color: "text-violet-400", icon: "📦" },
 };
 
-const CATEGORY_TABS: { key: AssetCategory | "ALL"; label: string }[] = [
+const CATEGORY_TABS: { key: string; label: string }[] = [
   { key: "ALL", label: "全部" },
+  { key: "STOCK_ACCOUNT", label: "📈 股票账户 (场内)" },
+  { key: "WEALTH_ACCOUNT", label: "🏦 理财账户 (稳健/场外)" },
   { key: "DEPOSIT", label: "💰 存款" },
   { key: "STOCK", label: "📈 股票" },
   { key: "FUND", label: "📊 基金" },
@@ -75,7 +77,7 @@ function formatPrice(n: number | null | undefined, isFundOrEtf = false) {
 
 export default function AssetsPage() {
   const { summary, loading, fetchSummary, addAsset, updateAsset, deleteAsset } = useAssetStore();
-  const [filterCategory, setFilterCategory] = useState<AssetCategory | "ALL">("ALL");
+  const [filterCategory, setFilterCategory] = useState<string>("ALL");
   const [modalOpen, setModalOpen] = useState(false);
   const [editingId, setEditingId] = useState<number | null>(null);
   const [form, setForm] = useState<AssetPayload>(EMPTY_FORM);
@@ -95,10 +97,27 @@ export default function AssetsPage() {
   const allocation = summary?.allocation ?? [];
   const s = summary?.summary;
 
-  const filteredAssets = useMemo(
-    () => (filterCategory === "ALL" ? assets : assets.filter((a) => a.category === filterCategory)),
-    [assets, filterCategory]
-  );
+  const filteredAssets = useMemo(() => {
+    if (filterCategory === "ALL") return assets;
+    if (filterCategory === "STOCK_ACCOUNT") {
+      return assets.filter(
+        (a) =>
+          a.accountType === "STOCK_ACCOUNT" ||
+          a.category === "STOCK" ||
+          (a.category === "FUND" && a.fundType === "EXCHANGE")
+      );
+    }
+    if (filterCategory === "WEALTH_ACCOUNT") {
+      return assets.filter(
+        (a) =>
+          a.accountType === "WEALTH_ACCOUNT" ||
+          a.category === "DEPOSIT" ||
+          a.category === "WEALTH" ||
+          (a.category === "FUND" && a.fundType === "OTC")
+      );
+    }
+    return assets.filter((a) => a.category === filterCategory);
+  }, [assets, filterCategory]);
 
   const [lookupLoading, setLookupLoading] = useState(false);
   const [lookupInfo, setLookupInfo] = useState<{ name: string; currentPrice?: number; category?: string; found: boolean } | null>(null);
@@ -335,204 +354,358 @@ export default function AssetsPage() {
           </div>
 
           {/* 汇总卡片 */}
-      <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
-        <div className="glass-panel p-5 animate-fade-in">
-          <span className="text-xs text-default-400">总资产净值</span>
-          <div className="text-2xl font-bold mt-1">{formatMoney(s?.totalValue)}</div>
-        </div>
-        <div className="glass-panel p-5 animate-fade-in">
-          <span className="text-xs text-default-400">持仓总浮盈 (资本利得)</span>
-          <div className={`text-2xl font-bold mt-1 ${(s?.totalProfit ?? 0) >= 0 ? "text-rise" : "text-fall"}`}>
-            {(s?.totalProfit ?? 0) >= 0 ? "+" : ""}{formatMoney(s?.totalProfit)}
+          <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
+            {/* 卡片 1: 总资产净值 & 今日综合实收 */}
+            <div className="glass-panel p-5 animate-fade-in relative overflow-hidden">
+              <div className="flex items-center justify-between">
+                <span className="text-xs text-default-400">总资产净值</span>
+                <span className="text-[10px] px-2 py-0.5 rounded-full bg-white/5 text-default-400">
+                  {s?.assetCount ?? 0} 项资产
+                </span>
+              </div>
+              <div className="text-2xl font-bold mt-1 text-white">{formatMoney(s?.totalValue)}</div>
+              <div className="mt-2.5 pt-2 border-t border-white/5 flex items-center justify-between text-xs">
+                <span className="text-default-400">今日综合收益:</span>
+                <span
+                  className={`font-mono font-bold ${
+                    (s?.todayProfit ?? 0) >= 0 ? "text-rise" : "text-fall"
+                  }`}
+                >
+                  {(s?.todayProfit ?? 0) >= 0 ? "+" : ""}
+                  {formatMoney(s?.todayProfit)}
+                  <span className="text-[11px] font-normal ml-1">
+                    ({(s?.todayProfitPct ?? 0) >= 0 ? "+" : ""}
+                    {s?.todayProfitPct ?? 0}%)
+                  </span>
+                </span>
+              </div>
+            </div>
+
+            {/* 卡片 2: 📈 股票账户 (场内股票+ETF) */}
+            <div className="glass-panel p-5 animate-fade-in relative overflow-hidden border-l-4 border-l-rose-500/80">
+              <div className="flex items-center justify-between">
+                <span className="text-xs text-rose-300 flex items-center gap-1 font-medium">
+                  <span>📈</span> 股票账户 (场内)
+                </span>
+                <span className="text-[10px] text-default-400">{s?.stockAccount?.count ?? 0} 只持仓</span>
+              </div>
+              <div className="text-2xl font-bold mt-1 text-white">
+                {formatMoney(s?.stockAccount?.totalValue)}
+              </div>
+              <div className="mt-2.5 pt-2 border-t border-white/5 space-y-1 text-xs">
+                <div className="flex items-center justify-between">
+                  <span className="text-default-400">今日盈亏:</span>
+                  <span
+                    className={`font-mono font-semibold ${
+                      (s?.stockAccount?.dailyProfit ?? 0) >= 0 ? "text-rise" : "text-fall"
+                    }`}
+                  >
+                    {(s?.stockAccount?.dailyProfit ?? 0) >= 0 ? "+" : ""}
+                    {formatMoney(s?.stockAccount?.dailyProfit)}
+                    <span className="text-[10px] ml-1">
+                      ({(s?.stockAccount?.dailyProfitPct ?? 0) >= 0 ? "+" : ""}
+                      {s?.stockAccount?.dailyProfitPct ?? 0}%)
+                    </span>
+                  </span>
+                </div>
+                <div className="flex items-center justify-between text-[11px]">
+                  <span className="text-default-400">累计浮盈:</span>
+                  <span
+                    className={`font-mono ${
+                      (s?.stockAccount?.totalProfit ?? 0) >= 0 ? "text-rise" : "text-fall"
+                    }`}
+                  >
+                    {(s?.stockAccount?.totalProfit ?? 0) >= 0 ? "+" : ""}
+                    {formatMoney(s?.stockAccount?.totalProfit)} ({s?.stockAccount?.totalProfitPct ?? 0}%)
+                  </span>
+                </div>
+              </div>
+            </div>
+
+            {/* 卡片 3: 🏦 理财账户 (存款+理财+场外基金，突出确定性日收益) */}
+            <div className="glass-panel p-5 animate-fade-in relative overflow-hidden border-l-4 border-l-emerald-500/80">
+              <div className="flex items-center justify-between">
+                <span className="text-xs text-emerald-300 flex items-center gap-1 font-medium">
+                  <span>🏦</span> 理财账户 (稳健确定生息)
+                </span>
+                <span className="text-[10px] text-default-400">{s?.wealthAccount?.count ?? 0} 笔配置</span>
+              </div>
+              <div className="text-2xl font-bold mt-1 text-emerald-400 flex items-baseline gap-1">
+                <span>+{formatMoney(s?.wealthAccount?.guaranteedDailyIncome ?? s?.guaranteedDailyIncome)}</span>
+                <span className="text-xs font-normal text-emerald-400/80">/ 天</span>
+              </div>
+              <div className="mt-2.5 pt-2 border-t border-white/5 space-y-1 text-xs">
+                <div className="flex items-center justify-between">
+                  <span className="text-default-400">确定年利息:</span>
+                  <span className="font-mono text-emerald-300">
+                    {formatMoney(s?.wealthAccount?.guaranteedAnnualIncome ?? s?.guaranteedAnnualIncome)}/年
+                  </span>
+                </div>
+                <div className="flex items-center justify-between text-[11px]">
+                  <span className="text-default-400">理财总本金:</span>
+                  <span className="font-mono text-default-300">
+                    {formatMoney(s?.wealthAccount?.totalValue)}
+                  </span>
+                </div>
+              </div>
+            </div>
+
+            {/* 卡片 4: 🎁 预估股票分红 (单独维度·浮动现金流) */}
+            <div className="glass-panel p-5 animate-fade-in relative overflow-hidden border-l-4 border-l-amber-500/80 group cursor-help">
+              <div className="flex items-center justify-between">
+                <span className="text-xs text-amber-300 flex items-center gap-1 font-medium">
+                  <span>🎁</span> 预估股票分红
+                </span>
+                <span className="text-[9px] px-1.5 py-0.2 rounded bg-amber-500/15 text-amber-400 border border-amber-500/20">
+                  浮动非固定
+                </span>
+              </div>
+              <div className="text-2xl font-bold mt-1 text-amber-400 flex items-baseline gap-1">
+                <span>{formatMoney(s?.dividendDimension?.estimatedAnnualDividend)}</span>
+                <span className="text-xs font-normal text-amber-400/80">/ 年</span>
+              </div>
+              <div className="mt-2.5 pt-2 border-t border-white/5 space-y-1 text-xs">
+                <div className="flex items-center justify-between">
+                  <span className="text-default-400">参考折合:</span>
+                  <span className="font-mono text-amber-300">
+                    +{formatMoney(s?.dividendDimension?.estimatedDailyDividend)}/天
+                  </span>
+                </div>
+                <div className="flex items-center justify-between text-[11px]">
+                  <span className="text-default-400">加权股息率:</span>
+                  <span className="font-mono text-default-300">
+                    {s?.dividendDimension?.avgDividendYield ?? 0}% ({s?.dividendDimension?.hasDividendAssetsCount ?? 0}只分红)
+                  </span>
+                </div>
+              </div>
+            </div>
           </div>
-          <span className={`text-xs font-medium block mt-1 ${(s?.totalProfitPct ?? 0) >= 0 ? "text-rise" : "text-fall"}`}>
-            {(s?.totalProfitPct ?? 0) >= 0 ? "+" : ""}{s?.totalProfitPct ?? 0}%
-          </span>
-        </div>
-        <div className="glass-panel p-5 animate-fade-in relative group cursor-help">
-          <span className="text-xs text-default-400 border-b border-dashed border-default-400/50">预估年收益 (现金流)</span>
-          <div className="text-2xl font-bold text-emerald-400 mt-1">{formatMoney(s?.estimatedAnnualIncome)}/年</div>
-          <p className="text-[10px] text-default-400 mt-1">包含存款利息、理财收益与股票预估年分红</p>
-        </div>
-        <div className="glass-panel p-5 animate-fade-in">
-          <span className="text-xs text-default-400">资产项数</span>
-          <div className="text-2xl font-bold mt-1">{s?.assetCount ?? 0} 项</div>
-        </div>
-      </div>
 
-      {/* 配置饼图 */}
-      <div className="glass-panel p-6 mb-6 animate-fade-in">
-        <h3 className="text-sm font-semibold mb-2">资产配置分布</h3>
-        <AssetAllocationChart data={allocation} height="260px" />
-      </div>
-
-      {/* 资产明细列表 */}
-      <div className="glass-panel overflow-hidden animate-fade-in">
-        <div className="p-5 border-b border-divider flex items-center justify-between flex-wrap gap-3">
-          <div className="flex items-center gap-3">
-            <h2 className="text-base font-semibold">资产明细</h2>
-            <SegmentedTabs
-              items={CATEGORY_TABS}
-              value={filterCategory}
-              onChange={(val) => setFilterCategory(val as AssetCategory | "ALL")}
-              size="sm"
-            />
+          {/* 配置饼图 */}
+          <div className="glass-panel p-6 mb-6 animate-fade-in">
+            <h3 className="text-sm font-semibold mb-2">资产配置分布</h3>
+            <AssetAllocationChart data={allocation} height="260px" />
           </div>
-          <span className="text-xs text-default-400">共 {filteredAssets.length} 项</span>
-        </div>
 
-        <div className="overflow-x-auto">
-          <table className="w-full text-sm">
-            <thead>
-              <tr className="border-b border-divider bg-default-50/30 text-xs text-default-400">
-                <th className="text-left py-3 px-4 font-medium">资产名称</th>
-                <th className="text-left py-3 px-4 font-medium">分类</th>
-                <th className="text-right py-3 px-4 font-medium">数量/本金</th>
-                <th className="text-right py-3 px-4 font-medium">成本/约定利率</th>
-                <th className="text-right py-3 px-4 font-medium">现价/股息率</th>
-                <th className="text-right py-3 px-4 font-medium">市值</th>
-                <th className="text-right py-3 px-4 font-medium">持仓浮盈</th>
-                <th className="text-right py-3 px-4 font-medium">预估年收益</th>
-                <th className="text-right py-3 px-4 font-medium">操作</th>
-              </tr>
-            </thead>
-            <tbody>
-              {filteredAssets.length === 0 && (
-                <tr>
-                  <td colSpan={9} className="py-10 text-center text-xs text-default-400">
-                    暂无该类别资产，点击右上角「添加资产」录入
-                  </td>
-                </tr>
-              )}
-              {filteredAssets.map((a) => {
-                const rawCat = ((a.category || "OTHER").toUpperCase()) as AssetCategory;
-                const meta = CATEGORY_META[rawCat] || CATEGORY_META.DEPOSIT || CATEGORY_META.OTHER;
-                const isPosition = rawCat === "STOCK" || rawCat === "FUND";
-                const profit = a.profit ?? 0;
-                const profitUp = profit >= 0;
-                const isOtcFund = rawCat === "FUND" && a.fundType === "OTC";
+          {/* 资产明细列表 */}
+          <div className="glass-panel overflow-hidden animate-fade-in">
+            <div className="p-5 border-b border-divider flex items-center justify-between flex-wrap gap-3">
+              <div className="flex items-center gap-3">
+                <h2 className="text-base font-semibold">资产明细</h2>
+                <SegmentedTabs
+                  items={CATEGORY_TABS}
+                  value={filterCategory}
+                  onChange={(val) => setFilterCategory(val)}
+                  size="sm"
+                />
+              </div>
+              <span className="text-xs text-default-400">共 {filteredAssets.length} 项</span>
+            </div>
 
-                return (
-                  <tr key={a.id} className="border-b border-divider/50 hover:bg-default-50/50 transition-colors">
-                    <td className="py-3.5 px-4">
-                      <div className="font-medium flex items-center gap-1.5">
-                        {a.name}
-                        {isOtcFund ? (
-                          <span
-                            className="text-[9px] px-1.5 py-0.5 rounded-full bg-amber-500/15 text-amber-400 font-medium"
-                            title={`场外基金：净值为 T-1 日收盘披露数据，非盘中实时价格${a.navDate ? `（净值日期 ${a.navDate}）` : ""}`}
-                          >
-                            场外 · 非实时
-                          </span>
-                        ) : a.category === "FUND" ? (
-                          <span
-                            className="text-[9px] px-1.5 py-0.5 rounded-full bg-emerald-500/15 text-emerald-400 font-medium"
-                            title="场内 ETF：交易所秒级实时行情"
-                          >
-                            场内 · 实时
-                          </span>
-                        ) : null}
-                        {a.dataStale && (
-                          <span title={isOtcFund ? "场外基金净值获取失败，暂按成本价估算" : "实时行情获取失败，暂按成本价估算"}>
-                            <AlertTriangle className="w-3.5 h-3.5 text-amber-400" />
-                          </span>
-                        )}
-                      </div>
-                      {a.code && <div className="text-[10px] text-default-400">{a.code}</div>}
-                    </td>
-                    <td className="py-3.5 px-4">
-                      <span className={`text-xs font-medium ${meta.color}`}>{meta.icon} {meta.label}</span>
-                    </td>
-                    <td className="py-3.5 px-4 text-right font-mono">
-                      {isPosition ? (a.shares ?? 0).toLocaleString() : formatMoney(a.amount)}
-                    </td>
-                    <td className="py-3.5 px-4 text-right font-mono text-default-400">
-                      {isPosition ? (
-                        `¥${formatPrice(a.costPrice, a.category === "FUND")}`
-                      ) : a.annualRate != null ? (
-                        <div>
-                          <span>{a.annualRate}%</span>
-                          <div className="text-[10px] text-default-400 font-normal">
-                            {PAYOUT_LABELS[a.payoutMethod || "MATURITY"] || a.payoutMethod || "到期付息"}
-                          </div>
-                        </div>
-                      ) : (
-                        "--"
-                      )}
-                    </td>
-                    <td className="py-3.5 px-4 text-right font-mono font-medium">
-                      {isPosition ? (
-                        `¥${formatPrice(a.currentPrice, a.category === "FUND")}`
-                      ) : (
-                        <div className="flex flex-col items-end text-[10px] leading-tight">
-                          {a.startDate && <span className="text-blue-400 font-medium">起息 {a.startDate}</span>}
-                          {a.maturityDate && <span className="text-amber-400 font-medium">到期 {a.maturityDate}</span>}
-                          {!a.startDate && !a.maturityDate && <span className="text-default-400">--</span>}
-                        </div>
-                      )}
-                      {a.category === "STOCK" && a.dividendYield != null && (
-                        <div className="flex flex-col items-end text-[10px] leading-tight mt-0.5">
-                          <span className="text-emerald-400 font-medium" title="最新盘中市场股息率">最新 {a.dividendYield}%</span>
-                          {a.costDividendYield != null && (
-                            <span className="text-blue-400 font-medium" title="你的实际买入成本股息率 (Yield on Cost)">成本 {a.costDividendYield}%</span>
-                          )}
-                        </div>
-                      )}
-                      {isOtcFund && a.navDate && (
-                        <div className="text-[9px] text-default-400 font-normal">净值日 {a.navDate}</div>
-                      )}
-                    </td>
-                    <td className="py-3.5 px-4 text-right font-mono font-semibold">
-                      {formatMoney(a.currentValue)}
-                    </td>
-                    <td className="py-3.5 px-4 text-right font-mono font-medium">
-                      {isPosition ? (
-                        <span className={profitUp ? "text-rise" : "text-fall"}>
-                          {profitUp ? "+" : ""}{formatMoney(profit)} ({profitUp ? "+" : ""}{a.profitPct ?? 0}%)
-                        </span>
-                      ) : (
-                        <span className="text-default-400">--</span>
-                      )}
-                    </td>
-                    <td className="py-3.5 px-4 text-right font-mono font-medium">
-                      <span className="text-emerald-400 font-semibold">{formatMoney(a.annualIncome)}/年</span>
-                      {a.category === "STOCK" && (
-                        <div className="text-[10px] text-default-400 font-normal" title="现金股息基于持股数与派息锁定，不受盘中股价波动影响">派息现金流</div>
-                      )}
-                      {a.accruedInterest != null && (
-                        <div className="text-[10px] text-blue-400 font-medium" title={`起息日 ${a.startDate}，现已存入 ${a.daysHeld} 天`}>
-                          已存 {a.daysHeld}天 | 累计利息 +{formatMoney(a.accruedInterest)}
-                        </div>
-                      )}
-                      {a.annualRate != null && a.accruedInterest == null && (
-                        <div className="text-[10px] text-default-400 font-normal">年化 {a.annualRate}%</div>
-                      )}
-                    </td>
-                    <td className="py-3.5 px-4 text-right">
-                      <div className="flex items-center justify-end gap-1.5">
-                        <button
-                          onClick={() => openEditModal(a)}
-                          className="p-1.5 rounded-lg text-default-400 hover:text-primary hover:bg-primary/10 transition-all"
-                          title="编辑"
-                        >
-                          <Pencil className="w-3.5 h-3.5" />
-                        </button>
-                        <button
-                          onClick={() => setDeleteConfirmAsset(a)}
-                          className="p-1.5 rounded-lg text-default-400 hover:text-red-400 hover:bg-red-500/10 transition-all"
-                          title="删除"
-                        >
-                          <Trash2 className="w-3.5 h-3.5" />
-                        </button>
-                      </div>
-                    </td>
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="border-b border-divider bg-default-50/30 text-xs text-default-400">
+                    <th className="text-left py-3 px-4 font-medium">资产名称</th>
+                    <th className="text-left py-3 px-4 font-medium">账户 / 分类</th>
+                    <th className="text-right py-3 px-4 font-medium">数量 / 本金</th>
+                    <th className="text-right py-3 px-4 font-medium">成本 / 约定利率</th>
+                    <th className="text-right py-3 px-4 font-medium">现价 / 股息率</th>
+                    <th className="text-right py-3 px-4 font-medium">市值</th>
+                    <th className="text-right py-3 px-4 font-medium">今日收益 / 涨跌</th>
+                    <th className="text-right py-3 px-4 font-medium">持仓累计浮盈</th>
+                    <th className="text-right py-3 px-4 font-medium">预估年收益 / 分红</th>
+                    <th className="text-right py-3 px-4 font-medium">操作</th>
                   </tr>
-                );
-              })}
-            </tbody>
-          </table>
-        </div>
-      </div>
+                </thead>
+                <tbody>
+                  {filteredAssets.length === 0 && (
+                    <tr>
+                      <td colSpan={10} className="py-10 text-center text-xs text-default-400">
+                        暂无该类别资产，点击右上角「添加资产」录入
+                      </td>
+                    </tr>
+                  )}
+                  {filteredAssets.map((a) => {
+                    const rawCat = ((a.category || "OTHER").toUpperCase()) as AssetCategory;
+                    const meta = CATEGORY_META[rawCat] || CATEGORY_META.DEPOSIT || CATEGORY_META.OTHER;
+                    const isPosition = rawCat === "STOCK" || (rawCat === "FUND" && a.fundType !== "OTC");
+                    const profit = a.profit ?? 0;
+                    const profitUp = profit >= 0;
+                    const isOtcFund = rawCat === "FUND" && a.fundType === "OTC";
+
+                    const isStockAccount =
+                      a.accountType === "STOCK_ACCOUNT" ||
+                      rawCat === "STOCK" ||
+                      (rawCat === "FUND" && a.fundType === "EXCHANGE");
+
+                    return (
+                      <tr key={a.id} className="border-b border-divider/50 hover:bg-default-50/50 transition-colors">
+                        <td className="py-3.5 px-4">
+                          <div className="font-medium flex items-center gap-1.5">
+                            {a.name}
+                            {isOtcFund ? (
+                              <span
+                                className="text-[9px] px-1.5 py-0.5 rounded-full bg-amber-500/15 text-amber-400 font-medium"
+                                title={`场外基金：净值为 T-1 日收盘披露数据，非盘中实时价格${a.navDate ? `（净值日期 ${a.navDate}）` : ""}`}
+                              >
+                                场外 · 非实时
+                              </span>
+                            ) : a.category === "FUND" ? (
+                              <span
+                                className="text-[9px] px-1.5 py-0.5 rounded-full bg-emerald-500/15 text-emerald-400 font-medium"
+                                title="场内 ETF：交易所秒级实时行情"
+                              >
+                                场内 · 实时
+                              </span>
+                            ) : null}
+                            {a.dataStale && (
+                              <span title={isOtcFund ? "场外基金净值获取失败，暂按成本价估算" : "实时行情获取失败，暂按成本价估算"}>
+                                <AlertTriangle className="w-3.5 h-3.5 text-amber-400" />
+                              </span>
+                            )}
+                          </div>
+                          {a.code && <div className="text-[10px] text-default-400">{a.code}</div>}
+                        </td>
+                        <td className="py-3.5 px-4">
+                          <div className="flex flex-col gap-0.5">
+                            <span className={`text-xs font-medium ${meta.color}`}>{meta.icon} {meta.label}</span>
+                            <span className="text-[9px] text-default-400">
+                              {isStockAccount ? "📈 股票账户" : "🏦 理财账户"}
+                            </span>
+                          </div>
+                        </td>
+                        <td className="py-3.5 px-4 text-right font-mono">
+                          {isPosition || isOtcFund ? (a.shares ?? 0).toLocaleString() : formatMoney(a.amount)}
+                        </td>
+                        <td className="py-3.5 px-4 text-right font-mono text-default-400">
+                          {isPosition || isOtcFund ? (
+                            `¥${formatPrice(a.costPrice, a.category === "FUND")}`
+                          ) : a.annualRate != null ? (
+                            <div>
+                              <span>{a.annualRate}%</span>
+                              <div className="text-[10px] text-default-400 font-normal">
+                                {PAYOUT_LABELS[a.payoutMethod || "MATURITY"] || a.payoutMethod || "到期付息"}
+                              </div>
+                            </div>
+                          ) : (
+                            "--"
+                          )}
+                        </td>
+                        <td className="py-3.5 px-4 text-right font-mono font-medium">
+                          {isPosition || isOtcFund ? (
+                            `¥${formatPrice(a.currentPrice, a.category === "FUND")}`
+                          ) : (
+                            <div className="flex flex-col items-end text-[10px] leading-tight">
+                              {a.startDate && <span className="text-blue-400 font-medium">起息 {a.startDate}</span>}
+                              {a.maturityDate && <span className="text-amber-400 font-medium">到期 {a.maturityDate}</span>}
+                              {!a.startDate && !a.maturityDate && <span className="text-default-400">--</span>}
+                            </div>
+                          )}
+                          {a.category === "STOCK" && a.dividendYield != null && (
+                            <div className="flex flex-col items-end text-[10px] leading-tight mt-0.5">
+                              <span className="text-emerald-400 font-medium" title="最新盘中市场股息率">最新 {a.dividendYield}%</span>
+                              {a.costDividendYield != null && (
+                                <span className="text-blue-400 font-medium" title="你的实际买入成本股息率 (Yield on Cost)">成本 {a.costDividendYield}%</span>
+                              )}
+                            </div>
+                          )}
+                          {isOtcFund && a.navDate && (
+                            <div className="text-[9px] text-default-400 font-normal">净值日 {a.navDate}</div>
+                          )}
+                        </td>
+                        <td className="py-3.5 px-4 text-right font-mono font-semibold">
+                          {formatMoney(a.currentValue)}
+                        </td>
+                        {/* 今日收益 / 涨跌 */}
+                        <td className="py-3.5 px-4 text-right font-mono font-medium">
+                          {isPosition ? (
+                            <div>
+                              <div className={(a.dailyProfit ?? 0) >= 0 ? "text-rise font-semibold" : "text-fall font-semibold"}>
+                                {(a.dailyProfit ?? 0) >= 0 ? "+" : ""}{formatMoney(a.dailyProfit)}
+                              </div>
+                              <div className={`text-[10px] ${(a.dailyProfitPct ?? 0) >= 0 ? "text-rise" : "text-fall"}`}>
+                                {(a.dailyProfitPct ?? 0) >= 0 ? "+" : ""}{a.dailyProfitPct ?? 0}%
+                              </div>
+                            </div>
+                          ) : isOtcFund ? (
+                            <div>
+                              <div className={(a.dailyProfit ?? 0) >= 0 ? "text-rise font-semibold" : "text-fall font-semibold"}>
+                                {(a.dailyProfit ?? 0) >= 0 ? "+" : ""}{formatMoney(a.dailyProfit)}
+                              </div>
+                              {a.dailyProfitPct != null && (
+                                <div className="text-[10px] text-default-400">
+                                  {(a.dailyProfitPct ?? 0) >= 0 ? "+" : ""}{a.dailyProfitPct}%
+                                </div>
+                              )}
+                            </div>
+                          ) : a.dailyIncome ? (
+                            <div>
+                              <span className="text-emerald-400 font-semibold">+{formatMoney(a.dailyIncome)}</span>
+                              <span className="text-[10px] text-emerald-400/80 block font-normal">/ 天 确定实收</span>
+                            </div>
+                          ) : (
+                            <span className="text-default-400">--</span>
+                          )}
+                        </td>
+                        <td className="py-3.5 px-4 text-right font-mono font-medium">
+                          {isPosition || isOtcFund ? (
+                            <span className={profitUp ? "text-rise" : "text-fall"}>
+                              {profitUp ? "+" : ""}{formatMoney(profit)} ({profitUp ? "+" : ""}{a.profitPct ?? 0}%)
+                            </span>
+                          ) : (
+                            <span className="text-default-400">--</span>
+                          )}
+                        </td>
+                        <td className="py-3.5 px-4 text-right font-mono font-medium">
+                          {a.category === "STOCK" ? (
+                            <div>
+                              <span className="text-amber-400 font-semibold">
+                                {a.estimatedDividendAnnual ? `${formatMoney(a.estimatedDividendAnnual)}/年` : "--"}
+                              </span>
+                              <div className="text-[10px] text-amber-400/80 font-normal" title="预估年度现金分红（浮动非保证）">
+                                {a.estimatedDividendDaily ? `折合 +${formatMoney(a.estimatedDividendDaily)}/天` : "浮动分红"}
+                              </div>
+                            </div>
+                          ) : (
+                            <div>
+                              <span className="text-emerald-400 font-semibold">{formatMoney(a.annualIncome)}/年</span>
+                              {a.accruedInterest != null && (
+                                <div className="text-[10px] text-blue-400 font-medium" title={`起息日 ${a.startDate}，现已存入 ${a.daysHeld} 天`}>
+                                  已存 {a.daysHeld}天 | 累计 +{formatMoney(a.accruedInterest)}
+                                </div>
+                              )}
+                              {a.annualRate != null && a.accruedInterest == null && (
+                                <div className="text-[10px] text-default-400 font-normal">年化 {a.annualRate}%</div>
+                              )}
+                            </div>
+                          )}
+                        </td>
+                        <td className="py-3.5 px-4 text-right">
+                          <div className="flex items-center justify-end gap-1.5">
+                            <button
+                              onClick={() => openEditModal(a)}
+                              className="p-1.5 rounded-lg text-default-400 hover:text-primary hover:bg-primary/10 transition-all"
+                              title="编辑"
+                            >
+                              <Pencil className="w-3.5 h-3.5" />
+                            </button>
+                            <button
+                              onClick={() => setDeleteConfirmAsset(a)}
+                              className="p-1.5 rounded-lg text-default-400 hover:text-red-400 hover:bg-red-500/10 transition-all"
+                              title="删除"
+                            >
+                              <Trash2 className="w-3.5 h-3.5" />
+                            </button>
+                          </div>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          </div>
 
       {/* 添加/编辑弹窗 */}
       {modalOpen && (

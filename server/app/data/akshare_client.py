@@ -230,12 +230,13 @@ def get_otc_fund_nav(code: str) -> Optional[Dict[str, Any]]:
             name = item.get("NAME") or base.get("SHORTNAME")
             dwjz = base.get("DWJZ")
             fsrq = base.get("FSRQ")
+            rzdf = _safe_float(base.get("RZDF") or base.get("JZZZL"))
             if name and dwjz is not None:
                 data = {
                     "fundName": name,
                     "navPrice": float(dwjz),
                     "navDate": str(fsrq) if fsrq else None,
-                    "changePct": None,
+                    "changePct": rzdf,
                 }
                 _OTC_FUND_NAV_CACHE[code] = {"data": data, "_fetchedAt": datetime.datetime.now().timestamp()}
                 return data
@@ -314,7 +315,7 @@ class AKShareClient:
         # 1. 抓取 A 股与港股大盘核心指数 (腾讯 API)
         cn_hk_codes = [
             "sh000001", "sz399001", "sz399006", "sh000922",
-            "sh000300", "sh000905", "sh588000", "r_HSI", "hkHSCEI", "hkHSTECH"
+            "sh000300", "sh000905", "sh000688", "r_HSI", "hkHSCEI", "hkHSTECH"
         ]
         indices = []
         try:

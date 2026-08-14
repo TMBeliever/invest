@@ -440,6 +440,7 @@ export type PayoutMethod = z.infer<typeof PayoutMethodSchema>;
 export const AssetItemSchema = z.object({
   id: z.number(),
   category: AssetCategorySchema,
+  accountType: z.enum(["STOCK_ACCOUNT", "WEALTH_ACCOUNT", "OTHER_ACCOUNT"]).optional(),
   name: z.string(),
   code: z.string().nullable().optional(),
   notes: z.string().nullable().optional(),
@@ -447,6 +448,9 @@ export const AssetItemSchema = z.object({
   // 通用市值/收益字段
   currentValue: z.number(),
   annualIncome: z.number(),
+  dailyProfit: z.number().nullable().optional(),      // 今日盈亏额 (Daily P&L)
+  dailyProfitPct: z.number().nullable().optional(),   // 今日涨跌幅%
+  dailyIncome: z.number().nullable().optional(),      // 单日折算利息/被动收益
 
   // 存款/理财
   amount: z.number().nullable().optional(),
@@ -463,10 +467,13 @@ export const AssetItemSchema = z.object({
   shares: z.number().nullable().optional(),
   costPrice: z.number().nullable().optional(),
   currentPrice: z.number().nullable().optional(),
+  prevClose: z.number().nullable().optional(),
   profit: z.number().nullable().optional(),
   profitPct: z.number().nullable().optional(),
   dividendYield: z.number().nullable().optional(),
   costDividendYield: z.number().nullable().optional(),
+  estimatedDividendAnnual: z.number().nullable().optional(),
+  estimatedDividendDaily: z.number().nullable().optional(),
   dataStale: z.boolean().nullable().optional(),
   priceAsOf: z.enum(["REALTIME", "PREV_CLOSE_NAV"]).nullable().optional(), // 价格时效：秒级实时 / 场外基金T-1收盘净值
   navDate: z.string().nullable().optional(), // 场外基金净值披露日期
@@ -481,13 +488,48 @@ export const AssetAllocationSchema = z.object({
 });
 export type AssetAllocation = z.infer<typeof AssetAllocationSchema>;
 
+export const StockAccountSummarySchema = z.object({
+  totalValue: z.number(),
+  dailyProfit: z.number(),
+  dailyProfitPct: z.number(),
+  totalProfit: z.number(),
+  totalProfitPct: z.number(),
+  count: z.number(),
+});
+export type StockAccountSummary = z.infer<typeof StockAccountSummarySchema>;
+
+export const WealthAccountSummarySchema = z.object({
+  totalValue: z.number(),
+  guaranteedDailyIncome: z.number(),
+  guaranteedAnnualIncome: z.number(),
+  otcDailyProfit: z.number(),
+  count: z.number(),
+});
+export type WealthAccountSummary = z.infer<typeof WealthAccountSummarySchema>;
+
+export const DividendDimensionSummarySchema = z.object({
+  estimatedAnnualDividend: z.number(),
+  estimatedDailyDividend: z.number(),
+  avgDividendYield: z.number(),
+  hasDividendAssetsCount: z.number(),
+});
+export type DividendDimensionSummary = z.infer<typeof DividendDimensionSummarySchema>;
+
 export const AssetSummarySchema = z.object({
   summary: z.object({
     totalValue: z.number(),
+    todayProfit: z.number().optional(),
+    todayProfitPct: z.number().optional(),
     totalProfit: z.number(),
     totalProfitPct: z.number(),
+    guaranteedDailyIncome: z.number().optional(),
+    guaranteedAnnualIncome: z.number().optional(),
     estimatedAnnualIncome: z.number(),
+    estimatedDailyIncome: z.number().optional(),
     assetCount: z.number(),
+    stockAccount: StockAccountSummarySchema.optional(),
+    wealthAccount: WealthAccountSummarySchema.optional(),
+    dividendDimension: DividendDimensionSummarySchema.optional(),
   }),
   allocation: z.array(AssetAllocationSchema),
   assets: z.array(AssetItemSchema),
