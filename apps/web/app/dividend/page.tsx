@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useEffect, useState } from "react";
 import { useDividendStore, type DividendStrategy } from "@investscope/core";
 import { SegmentedTabs } from "@investscope/ui";
@@ -14,6 +15,8 @@ import {
   Zap,
   Coins,
   Scale,
+  CalendarDays,
+  Sparkles,
 } from "lucide-react";
 
 const strategyTabs: { key: DividendStrategy; label: string; icon: any; desc: string }[] = [
@@ -95,6 +98,36 @@ export default function DividendPage() {
           </button>
         </form>
       </div>
+
+      {/* 💸 现金流预测日历入口横幅 */}
+      <Link
+        href="/dividend/calendar"
+        className="glass-panel p-4 mb-6 flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-emerald-500/30 bg-emerald-500/5 hover:bg-emerald-500/10 transition-all cursor-pointer group"
+      >
+        <div className="flex items-center gap-3">
+          <div className="w-10 h-10 rounded-2xl bg-emerald-500/20 flex items-center justify-center text-emerald-400 group-hover:scale-110 transition-transform">
+            <CalendarDays className="w-5 h-5" />
+          </div>
+          <div>
+            <div className="flex items-center gap-2">
+              <span className="text-sm font-bold text-white group-hover:text-emerald-300 transition-colors">
+                💸 未来 12 个月被动分红与利息现金流预测日历
+              </span>
+              <span className="text-[10px] px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 font-semibold border border-emerald-500/30">
+                全新上线
+              </span>
+            </div>
+            <p className="text-xs text-default-400 mt-0.5">
+              自动穿透您持仓的股票、ETF与定存理财，按月预测到账现金流与财务自由覆盖度。
+            </p>
+          </div>
+        </div>
+
+        <div className="flex items-center gap-1.5 text-xs font-semibold text-emerald-400 group-hover:translate-x-1 transition-transform">
+          <span>查看现金流日历</span>
+          <ArrowRight className="w-4 h-4" />
+        </div>
+      </Link>
 
       {/* 温度计大卡片 */}
       <div className="glass-panel p-8 mb-6 animate-fade-in">

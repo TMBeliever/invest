@@ -18,12 +18,14 @@ import {
   LogOut,
   UserCircle2,
   Wallet,
+  CalendarDays,
 } from "lucide-react";
 import { useState, useEffect } from "react";
 
 const navItems = [
   { href: "/", label: "仪表盘", icon: LayoutDashboard },
   { href: "/dividend", label: "红利测温", icon: Thermometer },
+  { href: "/dividend/calendar", label: "现金流日历", icon: CalendarDays },
   { href: "/market", label: "市场总览", icon: BarChart3 },
   { href: "/assets", label: "我的资产", icon: Wallet },
   { href: "/portfolio", label: "组合管理", icon: Briefcase },

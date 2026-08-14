@@ -1,6 +1,8 @@
-from fastapi import APIRouter, HTTPException, Query
-from typing import List, Dict, Any
+from fastapi import APIRouter, HTTPException, Query, Depends
+from typing import List, Dict, Any, Optional
+from app.api.auth import get_current_user
 from app.data.akshare_client import akshare_client
+from app.services.dividend_calendar import dividend_calendar_service
 
 router = APIRouter()
 
@@ -27,6 +29,18 @@ def get_top_stocks(strategy: str = Query("composite")) -> List[Dict[str, Any]]:
     if not stocks:
         raise HTTPException(status_code=503, detail="成份股行情数据暂时无法获取，请稍后重试")
     return stocks
+
+
+@router.get("/calendar")
+def get_dividend_calendar(
+    monthly_expense: float = Query(8000.0, description="每月生活基础开支目标 (元)"),
+    current_user: dict = Depends(get_current_user)
+) -> Dict[str, Any]:
+    """
+    获取当前用户的【未来 12 个月分红与利息现金流预测日历】与财务自由覆盖度。
+    """
+    user_id = current_user["id"]
+    return dividend_calendar_service.generate_calendar(user_id, monthly_living_expense=monthly_expense)
 
 
 @router.get("/stock/{code}")
