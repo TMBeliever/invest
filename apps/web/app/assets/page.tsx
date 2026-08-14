@@ -76,7 +76,7 @@ function formatPrice(n: number | null | undefined, isFundOrEtf = false) {
 }
 
 export default function AssetsPage() {
-  const { summary, loading, fetchSummary, addAsset, updateAsset, deleteAsset } = useAssetStore();
+  const { summary, loading, error, fetchSummary, addAsset, updateAsset, deleteAsset } = useAssetStore();
   const [filterCategory, setFilterCategory] = useState<string>("ALL");
   const [modalOpen, setModalOpen] = useState(false);
   const [editingId, setEditingId] = useState<number | null>(null);
@@ -348,6 +348,24 @@ export default function AssetsPage() {
       ) : (
         /* 资产明细账本主视图 */
         <>
+          {error["summary"] && (
+            <div className="p-4 rounded-2xl bg-rose-500/10 border border-rose-500/20 mb-6 flex items-center justify-between animate-fade-in">
+              <div className="flex items-center gap-3">
+                <AlertTriangle className="w-5 h-5 text-rose-400 shrink-0" />
+                <div>
+                  <div className="text-xs font-semibold text-white">资产数据加载暂未完成</div>
+                  <div className="text-[11px] text-default-400">{error["summary"]}</div>
+                </div>
+              </div>
+              <button
+                onClick={() => fetchSummary()}
+                className="px-3 py-1.5 rounded-xl bg-rose-500/20 text-rose-300 text-xs font-semibold hover:bg-rose-500/30 transition-all cursor-pointer flex items-center gap-1.5"
+              >
+                <RefreshCw className="w-3.5 h-3.5" /> 重新同步
+              </button>
+            </div>
+          )}
+
           {/* AI 组合体检卡片 */}
           <div className="mb-6">
             <AIPortfolioCard onViewXRay={() => setActiveView("XRAY")} />

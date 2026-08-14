@@ -54,6 +54,13 @@ class ApiClient {
     });
 
     if (!res.ok) {
+      if (res.status === 401 && typeof window !== "undefined" && !path.includes("/api/auth/")) {
+        this.token = null;
+        try {
+          localStorage.removeItem("investscope-auth");
+        } catch {}
+      }
+
       const errBody = await res.text().catch(() => "Unknown error");
       let detail = errBody;
       try {
