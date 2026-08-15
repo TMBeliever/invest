@@ -775,20 +775,22 @@ export function FinancialAnalysisCard({ report, loading }: FinancialAnalysisCard
                 >
                   全部机构 ({report.institutionalResearch.institutions?.length || 0})
                 </button>
-                <button
-                  type="button"
-                  onClick={() => {
-                    setInstitutionFilter("GLOBAL");
-                    setShowAllReports(false);
-                  }}
-                  className={`px-2.5 py-1 rounded-lg text-[11px] font-medium transition-all flex items-center gap-1 ${
-                    institutionFilter === "GLOBAL"
-                      ? "bg-primary text-black font-bold shadow-sm"
-                      : "text-default-400 hover:text-white"
-                  }`}
-                >
-                  🌐 全球外资 ({report.institutionalResearch.institutions?.filter((i) => i.orgType === "GLOBAL_TIER1").length || 0})
-                </button>
+                {report.institutionalResearch.institutions?.some((i) => i.orgType === "GLOBAL_TIER1") && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setInstitutionFilter("GLOBAL");
+                      setShowAllReports(false);
+                    }}
+                    className={`px-2.5 py-1 rounded-lg text-[11px] font-medium transition-all flex items-center gap-1 ${
+                      institutionFilter === "GLOBAL"
+                        ? "bg-primary text-black font-bold shadow-sm"
+                        : "text-default-400 hover:text-white"
+                    }`}
+                  >
+                    🌐 全球外资 ({report.institutionalResearch.institutions?.filter((i) => i.orgType === "GLOBAL_TIER1").length || 0})
+                  </button>
+                )}
                 <button
                   type="button"
                   onClick={() => {
