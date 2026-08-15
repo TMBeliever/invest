@@ -665,25 +665,36 @@ export function FinancialAnalysisCard({ report, loading }: FinancialAnalysisCard
             <div className="p-5 rounded-2xl bg-gradient-to-br from-primary/20 via-primary/5 to-transparent border border-primary/30 space-y-2">
               <div className="flex items-center justify-between">
                 <span className="text-xs font-bold text-primary flex items-center gap-1.5">
-                  <Target className="w-4 h-4" /> 机构平均共识目标价
+                  <Target className="w-4 h-4" /> 机构官方共识目标价
                 </span>
                 <span className="text-[10px] px-2 py-0.5 rounded-full bg-primary/20 text-primary font-mono font-bold">
-                  {report.institutionalResearch.totalReportCount} 篇研报覆盖
+                  {report.institutionalResearch.totalReportCount} 篇研报收录
                 </span>
               </div>
               <div className="flex items-baseline gap-3">
-                <span className="text-3xl font-extrabold font-mono text-foreground">
-                  ¥{report.institutionalResearch.consensusTargetPrice.toFixed(2)}
-                </span>
-                <span className="text-sm font-bold font-mono text-emerald-400">
-                  {report.institutionalResearch.upsidePotentialPct >= 0 ? "+" : ""}
-                  {report.institutionalResearch.upsidePotentialPct.toFixed(1)}% 预期空间
-                </span>
+                {report.institutionalResearch.consensusTargetPrice != null ? (
+                  <>
+                    <span className="text-3xl font-extrabold font-mono text-foreground">
+                      ¥{report.institutionalResearch.consensusTargetPrice.toFixed(2)}
+                    </span>
+                    <span className="text-sm font-bold font-mono text-emerald-400">
+                      {report.institutionalResearch.upsidePotentialPct != null && report.institutionalResearch.upsidePotentialPct >= 0 ? "+" : ""}
+                      {report.institutionalResearch.upsidePotentialPct != null ? `${report.institutionalResearch.upsidePotentialPct.toFixed(1)}%` : ""} 预期空间
+                    </span>
+                  </>
+                ) : (
+                  <div>
+                    <span className="text-xl font-bold text-default-300">暂未单独披露数字目标价</span>
+                    <span className="text-[11px] text-default-400 block mt-0.5">机构主要给出投资评级与盈利预测</span>
+                  </div>
+                )}
               </div>
               <div className="text-[11px] text-default-400 flex items-center justify-between pt-1 border-t border-primary/20">
                 <span>现价: ¥{report.institutionalResearch.currentPrice.toFixed(2)}</span>
                 <span>
-                  估值区间: ¥{report.institutionalResearch.minTargetPrice?.toFixed(2)} ~ ¥{report.institutionalResearch.maxTargetPrice?.toFixed(2)}
+                  {report.institutionalResearch.minTargetPrice != null
+                    ? `目标区间: ¥${report.institutionalResearch.minTargetPrice.toFixed(2)} ~ ¥${report.institutionalResearch.maxTargetPrice?.toFixed(2)}`
+                    : "100% 官方研报中心真实披露"}
                 </span>
               </div>
             </div>
@@ -727,7 +738,7 @@ export function FinancialAnalysisCard({ report, loading }: FinancialAnalysisCard
             {/* 核心看多逻辑精要 */}
             <div className="p-5 rounded-2xl bg-default-100/40 border border-divider/40 space-y-2">
               <span className="text-xs font-bold text-foreground flex items-center gap-1.5">
-                <Sparkles className="w-3.5 h-3.5 text-amber-400" /> 机构核心看多逻辑精要
+                <Sparkles className="w-3.5 h-3.5 text-amber-400" /> 机构核心研报视点精要
               </span>
               <div className="space-y-1.5 text-xs text-default-300">
                 {report.institutionalResearch.researchHighlights?.map((h, i) => (
@@ -745,7 +756,7 @@ export function FinancialAnalysisCard({ report, loading }: FinancialAnalysisCard
             <div className="flex flex-wrap items-center justify-between gap-3">
               <div className="flex items-center gap-2">
                 <BarChart3 className="w-4 h-4 text-primary" />
-                <span className="text-xs font-bold text-foreground">全球与国内权威机构深度研报与目标买入价透视</span>
+                <span className="text-xs font-bold text-foreground">全球与国内权威机构深度研报与官方目标买入价</span>
               </div>
 
               {/* 机构分类快速筛选 Tab */}
@@ -776,7 +787,7 @@ export function FinancialAnalysisCard({ report, loading }: FinancialAnalysisCard
                       : "text-default-400 hover:text-white"
                   }`}
                 >
-                  🌐 全球外资投行 ({report.institutionalResearch.institutions?.filter((i) => i.orgType === "GLOBAL_TIER1").length || 0})
+                  🌐 全球外资 ({report.institutionalResearch.institutions?.filter((i) => i.orgType === "GLOBAL_TIER1").length || 0})
                 </button>
                 <button
                   type="button"
@@ -802,8 +813,8 @@ export function FinancialAnalysisCard({ report, loading }: FinancialAnalysisCard
                     <th className="py-2.5 px-3 font-semibold">研究机构 / 梯队</th>
                     <th className="py-2.5 px-3 font-semibold">历史预测胜率 / 战绩</th>
                     <th className="py-2.5 px-3 font-semibold">投资评级</th>
-                    <th className="py-2.5 px-3 font-semibold">测算目标价</th>
-                    <th className="py-2.5 px-3 font-semibold">预期上涨空间</th>
+                    <th className="py-2.5 px-3 font-semibold">机构披露目标价</th>
+                    <th className="py-2.5 px-3 font-semibold">空间 (较现价)</th>
                     <th className="py-2.5 px-3 font-semibold">研报核心标题</th>
                     <th className="py-2.5 px-3 font-semibold">发布日期</th>
                     <th className="py-2.5 px-3 font-semibold text-right">研报原文</th>
@@ -855,31 +866,35 @@ export function FinancialAnalysisCard({ report, loading }: FinancialAnalysisCard
                         </span>
                       </td>
                       <td className="py-3 px-3 font-bold text-foreground">
-                        ¥{inst.targetPrice ? inst.targetPrice.toFixed(2) : "--"}
+                        {inst.targetPrice != null ? `¥${inst.targetPrice.toFixed(2)}` : "--"}
                       </td>
                       <td className="py-3 px-3">
-                        <span className="text-emerald-400 font-bold">
-                          {inst.upsidePct && inst.upsidePct > 0 ? `+${inst.upsidePct.toFixed(1)}%` : "--"}
-                        </span>
+                        {inst.upsidePct != null ? (
+                          <span className={`font-bold ${inst.upsidePct >= 0 ? "text-emerald-400" : "text-rose-400"}`}>
+                            {inst.upsidePct >= 0 ? "+" : ""}{inst.upsidePct.toFixed(1)}%
+                          </span>
+                        ) : (
+                          <span className="text-default-600 font-mono text-xs">--</span>
+                        )}
                       </td>
                       <td className="py-3 px-3 font-sans text-default-300 max-w-xs truncate" title={inst.title}>
                         {inst.title}
                       </td>
                       <td className="py-3 px-3 text-default-400 text-[11px]">{inst.publishDate}</td>
                       <td className="py-3 px-3 text-right">
-                        {inst.pdfUrl ? (
+                        {inst.orgType !== "GLOBAL_TIER1" && inst.pdfUrl && inst.pdfUrl.includes(".pdf") ? (
                           <a
                             href={inst.pdfUrl}
                             target="_blank"
                             rel="noopener noreferrer"
                             className="p-1.5 rounded-lg bg-white/5 hover:bg-primary/20 text-default-400 hover:text-primary transition-colors inline-flex items-center gap-1 text-[11px]"
-                            title="查看官方研报原文或检索"
+                            title="查看官方原版研报 PDF"
                           >
                             <ExternalLink className="w-3.5 h-3.5" />
-                            <span className="text-[10px]">查看</span>
+                            <span className="text-[10px]">PDF</span>
                           </a>
                         ) : (
-                          <span className="text-default-600 text-[10px]">--</span>
+                          <span className="text-default-600 font-mono text-[11px]">--</span>
                         )}
                       </td>
                     </tr>

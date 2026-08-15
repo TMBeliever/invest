@@ -438,20 +438,24 @@ export default function StrategyBasketsPage() {
                       <th className="py-3 px-3 font-semibold">表面股息率</th>
                       <th className="py-3 px-3 font-semibold">排雷风险标签</th>
                       <th className="py-3 px-4 font-semibold">致命排雷原因（为什么绝不能买）</th>
+                      <th className="py-3 px-3 text-right font-semibold">操作</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-white/5">
                     {filteredTraps.map((trap, idx) => (
-                      <tr key={trap.code} className="hover:bg-white/5 transition-colors">
+                      <tr key={trap.code} className="hover:bg-white/5 transition-colors group">
                         <td className="py-3 px-4">
                           <div className="flex items-center gap-2">
                             <span className="w-5 h-5 rounded-full bg-rose-500/15 text-rose-400 text-[10px] font-mono flex items-center justify-center font-bold">
                               ✕
                             </span>
                             <div>
-                              <span className="font-bold text-gray-200 line-through decoration-rose-500/50 block text-xs">
+                              <Link
+                                href={`/dividend/${trap.code}`}
+                                className="font-bold text-gray-200 hover:text-rose-400 line-through decoration-rose-500/50 block text-xs transition-colors"
+                              >
                                 {trap.name}
-                              </span>
+                              </Link>
                               <span className="text-[10px] text-default-500 font-mono">{trap.code}</span>
                             </div>
                           </div>
@@ -475,6 +479,15 @@ export default function StrategyBasketsPage() {
                           <div className="text-[10px] text-default-500 mt-0.5">
                             官方依据：{trap.financialEvidence}
                           </div>
+                        </td>
+                        <td className="py-3 px-3 text-right">
+                          <Link
+                            href={`/dividend/${trap.code}`}
+                            className="px-2.5 py-1 rounded-lg bg-rose-500/10 hover:bg-rose-500/20 text-rose-300 hover:text-rose-200 border border-rose-500/30 text-[11px] font-medium transition-colors inline-flex items-center gap-1"
+                          >
+                            <span>排雷体检</span>
+                            <ExternalLink className="w-3 h-3" />
+                          </Link>
                         </td>
                       </tr>
                     ))}

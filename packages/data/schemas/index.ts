@@ -412,10 +412,10 @@ export type InstitutionalReportItem = z.infer<typeof InstitutionalReportItemSche
 
 export const InstitutionalResearchSchema = z.object({
   currentPrice: z.number(),
-  consensusTargetPrice: z.number(),
-  minTargetPrice: z.number().optional(),
-  maxTargetPrice: z.number().optional(),
-  upsidePotentialPct: z.number(),
+  consensusTargetPrice: z.number().nullable().optional(),
+  minTargetPrice: z.number().nullable().optional(),
+  maxTargetPrice: z.number().nullable().optional(),
+  upsidePotentialPct: z.number().nullable().optional(),
   totalReportCount: z.number().optional(),
   ratingDistribution: z.object({
     buy: z.number(),
