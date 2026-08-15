@@ -59,24 +59,18 @@ class PremarketNoticeScanner:
     def fetch_stock_latest_notices(self, code: str, page_size: int = 5) -> List[Dict[str, Any]]:
         """从东方财富官方公告数据中心获取单只股票的最新官方公告"""
         clean = _clean_code(code)
-        url = (
-            "https://datacenter-web.eastmoney.com/api/data/v1/get?"
-            "reportName=RPT_LATESTNOTICE&columns=ALL&"
-            f"filter=(SECURITY_CODE%3D%22{clean}%22)&"
-            "sortColumns=NOTICEDATE&sortTypes=-1&"
-            f"pageSize={page_size}"
-        )
+        url = f"https://np-anotice-stock.eastmoney.com/api/security/ann?page_size={page_size}&page_index=1&ann_type=A&client_source=web&stock_list={clean}"
         try:
             resp = requests.get(url, headers={"User-Agent": "Mozilla/5.0"}, timeout=3)
             if resp.status_code == 200:
-                data = resp.json().get("result", {}).get("data", []) or []
+                data = resp.json().get("data", {}).get("list", []) or []
                 results = []
                 for row in data:
                     results.append({
-                        "title": row.get("TITLE") or row.get("NOTICETITLE") or "",
-                        "date": str(row.get("NOTICEDATE") or "")[:19],
-                        "type": row.get("INFOTYPE") or "公告",
-                        "url": row.get("URL") or "",
+                        "title": row.get("title") or "",
+                        "date": str(row.get("notice_date") or "")[:19],
+                        "type": "官方公告",
+                        "art_code": row.get("art_code") or "",
                     })
                 return results
         except Exception as e:
