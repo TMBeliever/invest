@@ -24,6 +24,7 @@ export interface StrategyBasketStock {
   nationalTeamLabel?: string;
   score: number;
   reasons: string[];
+  potentialRisks?: string[];
   weightPct: number;
 }
 

@@ -341,6 +341,29 @@ class SmartDividendBasketService:
             if not reasons:
                 reasons.append("综合基本面优选")
 
+            # 潜在可能风险与行业宏观逆风提示 (客观透明披露)
+            potential_risks = []
+            if "银行" in industry or "金融" in industry:
+                potential_risks.append("行业净息差(NIM)面临收窄承压")
+                potential_risks.append("需关注零售及小微贷款资产质量与不良率变动")
+            elif "电力" in industry or "水务" in industry or "核电" in industry or "公用" in industry:
+                potential_risks.append("水库流域来水丰枯季节性波动")
+                potential_risks.append("市场化电价交易折价与煤电联动态势")
+            elif "能源" in industry or "石油" in industry or "煤炭" in industry or "石化" in industry:
+                potential_risks.append("国际原油与国内动力煤长协现货价格波动")
+                potential_risks.append("宏观工业用电需求与绿色减碳政策约束")
+            elif "家电" in industry or "食品" in industry or "消费" in industry or "饮料" in industry or "白酒" in industry:
+                potential_risks.append("国内居民可选消费力复苏节奏")
+                potential_risks.append("海外出口关税与贸易摩擦潜在扰动")
+            elif "交通" in industry or "公路" in industry or "港口" in industry or "铁路" in industry:
+                potential_risks.append("收费公路特许经营年限到期与改扩建大额资本开支")
+                potential_risks.append("宏观货物物流周转量波动")
+            elif "通信" in industry or "建筑" in industry or "基建" in industry:
+                potential_risks.append("算力基础设施投资回报周期较长")
+                potential_risks.append("地方基建回款账期与应收账款周转")
+            else:
+                potential_risks.append("宏观经济增速放缓对终端需求的潜在压制")
+
             scored_candidates.append({
                 "code": code,
                 "name": name,
@@ -356,6 +379,7 @@ class SmartDividendBasketService:
                 "nationalTeamLabel": national_team_label,
                 "score": round(total_score, 1),
                 "reasons": reasons[:3],
+                "potentialRisks": potential_risks[:2],
             })
 
         # ─────────────────────────────────────────────────────────────────

@@ -699,22 +699,40 @@ export default function StrategyBasketsPage() {
                       </div>
                     </td>
 
-                    {/* 入选核心理由 */}
+                    {/* 入选核心理由与潜在风险提示 */}
                     <td className="py-3.5 px-4">
-                      <div className="flex flex-wrap gap-1.5">
-                        {stock.nationalTeamRatio > 0 && (
-                          <span className="text-[10px] px-2 py-0.5 rounded-md bg-blue-500/15 border border-blue-500/25 text-blue-400 font-medium flex items-center gap-1">
-                            <Landmark className="w-2.5 h-2.5" /> 国家队{stock.nationalTeamRatio}%
-                          </span>
+                      <div className="space-y-1.5">
+                        {/* 理由标签 */}
+                        <div className="flex flex-wrap gap-1.5">
+                          {stock.nationalTeamRatio > 0 && (
+                            <span className="text-[10px] px-2 py-0.5 rounded-md bg-blue-500/15 border border-blue-500/25 text-blue-400 font-medium flex items-center gap-1">
+                              <Landmark className="w-2.5 h-2.5" /> 国家队{stock.nationalTeamRatio}%
+                            </span>
+                          )}
+                          {stock.reasons.map((r, ri) => (
+                            <span
+                              key={ri}
+                              className="text-[10px] px-2 py-0.5 rounded-md bg-white/5 border border-white/10 text-default-300"
+                            >
+                              {r}
+                            </span>
+                          ))}
+                        </div>
+
+                        {/* 潜在可能风险与宏观逆风提示 */}
+                        {stock.potentialRisks && stock.potentialRisks.length > 0 && (
+                          <div className="flex flex-wrap gap-1 pt-0.5">
+                            {stock.potentialRisks.map((risk, rki) => (
+                              <span
+                                key={rki}
+                                className="text-[9.5px] px-1.5 py-0.5 rounded-md bg-amber-500/10 border border-amber-500/20 text-amber-300/90 flex items-center gap-1"
+                              >
+                                <AlertTriangle className="w-2.5 h-2.5 text-amber-400 shrink-0" />
+                                {risk}
+                              </span>
+                            ))}
+                          </div>
                         )}
-                        {stock.reasons.map((r, ri) => (
-                          <span
-                            key={ri}
-                            className="text-[10px] px-2 py-0.5 rounded-md bg-white/5 border border-white/10 text-default-300"
-                          >
-                            {r}
-                          </span>
-                        ))}
                       </div>
                     </td>
 
