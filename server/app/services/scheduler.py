@@ -89,18 +89,16 @@ class SchedulerService:
                             except Exception as e:
                                 logger.error(f"[Scheduler] 收盘推送失败 [{u_id}]: {e}")
 
-                    # ─── 3. 风险哨兵与机会巡视动态频次判定 ─────────────────────
-                    freq = cfg.get("patrol_scan_frequency") or "INTERVAL_30MIN"
+                    # ─── 3. 风险哨兵、机会巡视与策略魔方盘中每 10 分钟准点巡检 ─────
+                    freq = cfg.get("patrol_scan_frequency") or "INTERVAL_10MIN"
                     should_scan = False
 
-                    # 仅在盘中及收盘时段执行 (09:30 ~ 16:00)
-                    if 9 <= hour <= 16:
-                        if freq == "INTERVAL_30MIN" and minute in (0, 30):
-                            should_scan = True
-                        elif freq == "INTERVAL_60MIN" and minute == 0:
-                            should_scan = True
-                        elif freq == "TIMES_1030_1430" and ((hour == 10 and minute == 30) or (hour == 14 and minute == 30)):
-                            should_scan = True
+                    # 仅在盘中交易及结算时段执行 (09:30 ~ 15:30) 每 10 分钟准点扫描
+                    is_market_hours = (hour == 9 and minute >= 30) or (10 <= hour <= 14) or (hour == 15 and minute <= 30)
+                    if is_market_hours and (minute % 10 == 0):
+                        should_scan = True
+                    elif (9 <= hour <= 16) and (freq == "INTERVAL_30MIN" and minute in (0, 30)):
+                        should_scan = True
 
                     if should_scan:
                         scan_slot_key = f"{today_str}:{u_id}:SCAN:{hour}:{minute}"
@@ -136,6 +134,23 @@ class SchedulerService:
                                             await dispatch_router.dispatch(op, user_id=u_id)
                                 except Exception as e:
                                     logger.error(f"[Scheduler] 巡检机会异常 [{u_id}]: {e}")
+
+                # ─── 4. 早盘公告扫描、突发排雷与策略魔方定时预热 (早盘 08:00 / 盘后 15:40 / 盘中每 10 分钟) ───
+                if (hour == 8 and minute == 0) or (hour == 15 and minute == 40) or (is_market_hours and minute % 10 == 0):
+                    notice_scan_key = f"{today_str}:NOTICE_SCAN:{hour}:{minute}"
+                    if notice_scan_key not in self._pushed_keys:
+                        self._pushed_keys.add(notice_scan_key)
+                        try:
+                            from app.services.premarket_notice_scanner import premarket_notice_scanner
+                            premarket_notice_scanner.scan_negative_notices()
+                            if (hour == 8 and minute == 0) or (hour == 15 and minute == 40):
+                                logger.info(f"💎 [Scheduler 08:00/15:40 准点触发] 正在执行全市场 300+ 只优质红利股票池与 7 重全景排雷后台量化计算预热...")
+                                from app.services.smart_dividend_basket import smart_dividend_basket_service
+                                for st in ("BALANCED_QUALITY", "DEEP_VALUE_SAFETY", "HIGH_ROE_GROWTH", "SOVEREIGN_SUPPORT"):
+                                    smart_dividend_basket_service.generate_basket(count=10, strategy=st)
+                                logger.info("💎 [Scheduler] 策略魔方 4 大模型组合量化计算与排雷预热完成！")
+                        except Exception as e:
+                            logger.error(f"[Scheduler] 公告与策略魔方预热失败: {e}")
 
             except Exception as e:
                 logger.error(f"[SchedulerService] 调度循环异常: {e}")

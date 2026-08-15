@@ -1,7 +1,7 @@
 from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from app.api import market, dividend, portfolio, stock, ws, auth, financial, assets, ai, actions, xray, intelligence, gateway, national_team
+from app.api import market, dividend, portfolio, stock, ws, auth, financial, assets, ai, actions, xray, intelligence, gateway, national_team, smart_basket
 from app.services.quote_hub import quote_hub
 from app.services.scheduler import scheduler_service
 from app.services.gateway.telegram_poller import telegram_bot_service
@@ -46,6 +46,7 @@ app.include_router(assets.router, prefix="/api/assets", tags=["Assets"])
 app.include_router(xray.router, prefix="/api/assets", tags=["X-Ray"])
 app.include_router(intelligence.router, tags=["Intelligence & Sentinel"])
 app.include_router(national_team.router, tags=["National Team"])
+app.include_router(smart_basket.router, prefix="/api/strategy-baskets", tags=["Strategy Baskets"])
 app.include_router(actions.router, prefix="/api/actions", tags=["Actions"])
 app.include_router(ai.router, prefix="/api/ai", tags=["AI Advisor"])
 app.include_router(gateway.router, prefix="/api/gateway", tags=["Gateway & Bots"])

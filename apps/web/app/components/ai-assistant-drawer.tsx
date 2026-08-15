@@ -590,7 +590,20 @@ export function AIAssistantDrawer() {
       };
     }
 
-    // 2. 国家队操盘与跟随策略
+    // 2. 策略魔方 / 智选组合工厂
+    if (pathname === "/strategy-baskets") {
+      return {
+        contextTag: "📌 策略魔方与自选组合专属分析:",
+        prompts: [
+          "💎 帮我生成一套 8 只股票的高 ROE 优质避坑红利组合",
+          "🥊 深度对比自建红利组合 vs 中证红利 ETF (510880) 优势",
+          "🛡️ 组合中如何设置单行业不超过 30% 避免全押银行煤炭",
+          "🚀 测算 10 万元买入当前自选红利组合的年现金流收益",
+        ],
+      };
+    }
+
+    // 3. 国家队操盘与跟随策略
     if (pathname === "/national-team") {
       return {
         contextTag: "📌 国家队操盘与跟随策略专属分析:",

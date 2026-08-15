@@ -163,6 +163,27 @@ AI_TOOLS_DEFINITIONS = [
                 "required": ["symbol"]
             }
         }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "get_smart_dividend_basket",
+            "description": "获取【策略魔方·优质红利自选定制组合】。从全市场优质高股息标的中，执行周期顶点排雷、财务安全过滤与国家队机构加权，生成 3 ~ 20 只最优分散红利投资篮子，并提供与传统中证红利 ETF (510880) 的降维对比与年省管理费分析。",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "count": {
+                        "type": "integer",
+                        "description": "选股数量（3 ~ 20，默认 10）"
+                    },
+                    "strategy": {
+                        "type": "string",
+                        "description": "策略风格：BALANCED_QUALITY (优质避坑平衡) | DEEP_VALUE_SAFETY (破净低波防守) | HIGH_ROE_GROWTH (高ROE复利) | SOVEREIGN_SUPPORT (国家队压舱石)"
+                    }
+                },
+                "required": []
+            }
+        }
     }
 ]
 
@@ -363,6 +384,16 @@ def execute_stock_money_flow(symbol: str) -> Dict[str, Any]:
         return {"error": f"获取资金流向失败: {str(e)}"}
 
 
+def execute_smart_dividend_basket(count: int = 10, strategy: str = "BALANCED_QUALITY") -> Dict[str, Any]:
+    """生成 3~20 只优质红利自选组合及中证红利 ETF 对比"""
+    try:
+        from app.services.smart_dividend_basket import smart_dividend_basket_service
+        return smart_dividend_basket_service.generate_basket(count=count, strategy=strategy)
+    except Exception as e:
+        logger.error(f"执行 get_smart_dividend_basket 失败: {e}")
+        return {"error": f"生成定制红利组合失败: {str(e)}"}
+
+
 def dispatch_ai_tool(tool_name: str, tool_args: Dict[str, Any], user_id: Optional[str] = None) -> Dict[str, Any]:
     """AI Function Call 统一分发执行器"""
     logger.info(f"⚡ [AI Agent Tool Call]: {tool_name} with args {tool_args} (user_id={user_id})")
@@ -379,6 +410,8 @@ def dispatch_ai_tool(tool_name: str, tool_args: Dict[str, Any], user_id: Optiona
             return execute_national_team_overview()
         elif tool_name == "get_stock_money_flow":
             return execute_stock_money_flow(tool_args.get("symbol", ""))
+        elif tool_name == "get_smart_dividend_basket":
+            return execute_smart_dividend_basket(count=int(tool_args.get("count", 10)), strategy=str(tool_args.get("strategy", "BALANCED_QUALITY")))
         elif tool_name == "get_stock_quote":
             return execute_stock_quote(tool_args.get("symbol", ""))
         elif tool_name == "get_financial_analysis":
