@@ -1294,21 +1294,55 @@ class AKShareClient:
 
     @staticmethod
     def _classify_industry(name: str, code: str) -> str:
-        """基于股票名称关键词分类行业（无法判断时为'其它'）"""
-        if "银行" in name:                                          return "银行/金融"
-        if "保险" in name:                                          return "保险/金融"
-        if "证券" in name or "基金" in name:                        return "证券/基金"
-        if "煤" in name or "神华" in name or "焦" in name:          return "煤炭/能源"
-        if "石化" in name or "石油" in name:                        return "石油化工"
-        if "天然气" in name or "新奥" in name:                      return "天然气/清洁能源"
-        if "电力" in name or "长江电" in name:                      return "电力/公用事业"
-        if "电器" in name or "家电" in name:                        return "消费/家电"
-        if "酒" in name or "茅台" in name or "五粮液" in name:      return "白酒/消费"
-        if "食品" in name or "双汇" in name:                        return "食品/消费"
-        if "高速" in name or "港" in name or "运" in name:          return "交通交运"
-        if "地产" in name or "建设" in name:                        return "建筑/地产"
-        if "重科" in name or "机械" in name:                        return "高端装备/机械"
-        return "其它"
+        """基于股票名称与代码进行高精度行业分类"""
+        c = str(code).strip()
+        n = str(name).strip()
+
+        # 金融类
+        if "银行" in n or c in ["600036", "601398", "601288", "601939", "601328", "601166", "600919", "601009", "002142", "601229", "601998", "601818", "600015", "600016", "601128", "600926", "601838", "600000"]:
+            return "银行/金融"
+        if "保险" in n or "平安" in n or "太保" in n or "人寿" in n or c in ["601318", "601601", "601628"]:
+            return "保险/非银金融"
+        if "证券" in n or "中信建投" in n or "海通" in n or "国泰" in n or "华泰" in n or c in ["600030", "601066"]:
+            return "证券/非银金融"
+
+        # 能源电力公用
+        if "核电" in n or "广核" in n or "水电" in n or "电力" in n or "能源" in n or c in ["600900", "600886", "600674", "600025", "601985", "003816", "600011", "600027", "600021", "600167", "600863"]:
+            return "电力/公用事业"
+        if "煤" in n or "神华" in n or "焦" in n or "煤业" in n or c in ["601088", "601225", "000983", "601699"]:
+            return "煤炭/能源"
+        if "石化" in n or "石油" in n or "海油" in n or c in ["600938", "601857", "600028"]:
+            return "石油化工/能源"
+
+        # 消费与家电食品
+        if "酒" in n or "茅台" in n or "五粮液" in n or "老窖" in n or c in ["600519", "000858", "000568", "600809"]:
+            return "白酒/消费"
+        if "电器" in n or "家电" in n or "美的" in n or "格力" in n or "海尔" in n or c in ["000651", "000333", "600690"]:
+            return "消费/家电"
+        if "食品" in n or "双汇" in n or "伊利" in n or "啤酒" in n or "海天" in n or "榨菜" in n or "醋" in n or c in ["000895", "600887", "600600", "002507", "603288", "600305"]:
+            return "食品饮料/消费"
+
+        # 交通交运港口公路
+        if "高速" in n or "港" in n or "运" in n or "铁路" in n or "公路" in n or c in ["601598", "600018", "600012", "600377", "601188", "600035", "600350", "601006", "601333"]:
+            return "交通交运/港口公路"
+
+        # 央企基建与建筑
+        if "建筑" in n or "铁建" in n or "交建" in n or "中铁" in n or "电建" in n or "能建" in n or c in ["601668", "601186", "601800", "601390", "601669"]:
+            return "建筑/基建央企"
+
+        # 通信与科技
+        if "移动" in n or "电信" in n or "联通" in n or "通信" in n or c in ["600941", "601728", "600050", "000063"]:
+            return "通信/电信运营"
+
+        # 基础化工与制造
+        if "化学" in n or "新和成" in n or "万华" in n or c in ["600309", "002001"]:
+            return "基础化工/新材料"
+
+        # 地产
+        if "地产" in n or "保利" in n or "万科" in n or "金地" in n or "华侨城" in n or c in ["000002", "600048", "600383"]:
+            return "房地产"
+
+        return "其它制造"
 
     @staticmethod
     def _calc_score(div_yield: Optional[float], pe: Optional[float], pb: Optional[float]) -> int:
