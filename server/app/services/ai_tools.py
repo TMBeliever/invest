@@ -113,6 +113,56 @@ AI_TOOLS_DEFINITIONS = [
                 "required": []
             }
         }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "get_dividend_calendar",
+            "description": "获取用户指定年度（默认当前年）的【未来12个月现金流到账日历与分红/利息预测事件】。包含各月份现金流汇总、波峰波谷月度分布、每笔具体派息/结息事件（标的名称、代码、金额、具体到账日期、结息方式）。用于分析月度现金流、断档期及平滑月度收入规划。",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "year": {
+                        "type": "integer",
+                        "description": "查询年份，例如 2026（默认当前年份）"
+                    },
+                    "month": {
+                        "type": "integer",
+                        "description": "查询具体月份（1-12，可选）"
+                    }
+                },
+                "required": []
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "get_national_team_overview",
+            "description": "获取【国家队操盘雷达与四大主力持仓透视全景】。包含 12 大核心维稳 ETF 实时成交放量倍数与护盘强度评级(S/A/B级)、中央汇金/中国证金/全国社保/国新系四大主力的万亿级持仓底牌与 37+ 支柱重仓股实时盘面、高股息跟车策略候选池及回测胜率。",
+            "parameters": {
+                "type": "object",
+                "properties": {},
+                "required": []
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "get_stock_money_flow",
+            "description": "获取指定股票或 ETF 的【盘中实时大单多空力量及近 15 个交易日真实逐日资金流向历史】。包含外盘主动买入、内盘主动卖出、盘中多空差额、量比、每日收盘价、主力大单净买入(亿元)、主力买入占比以及各大国家队机构（汇金/证金/社保/国新）的出资拆解。",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "symbol": {
+                        "type": "string",
+                        "description": "股票代码或中文名称，例如 '招商银行'、'600036'、'工商银行'、'510300' 等"
+                    }
+                },
+                "required": ["symbol"]
+            }
+        }
     }
 ]
 
@@ -259,6 +309,60 @@ def execute_compare_stocks(symbols: List[str]) -> Dict[str, Any]:
     return {"comparedCount": len(results), "comparison": results}
 
 
+def execute_dividend_calendar(user_id: str, year: Optional[int] = None, month: Optional[int] = None) -> Dict[str, Any]:
+    """获取用户真实现金流日历与事件"""
+    try:
+        from app.services.dividend_calendar import dividend_calendar_service
+        cal = dividend_calendar_service.generate_calendar(user_id)
+        if month:
+            target_year = year or datetime.datetime.now().year
+            month_str = f"{target_year}-{int(month):02d}"
+            monthly_events = [e for e in cal.get("events", []) if e.get("date", "").startswith(month_str)]
+            monthly_sum = sum(float(e.get("amount") or 0.0) for e in monthly_events)
+            return {
+                "year": target_year,
+                "month": month,
+                "monthTotalIncome": round(monthly_sum, 2),
+                "eventsCount": len(monthly_events),
+                "events": monthly_events,
+            }
+        return cal
+    except Exception as e:
+        logger.error(f"执行 get_dividend_calendar 失败: {e}")
+        return {"error": f"获取现金流日历失败: {str(e)}"}
+
+
+def execute_national_team_overview() -> Dict[str, Any]:
+    """获取国家队操盘雷达与四大主力底牌"""
+    try:
+        from app.services.national_team import national_team_service
+        radar = national_team_service.get_realtime_defense_radar()
+        holdings = national_team_service.get_national_team_holdings()
+        follow = national_team_service.get_follow_strategy_pool()
+        return {
+            "radarSummary": radar.get("summary"),
+            "topActiveEtfs": [e for e in radar.get("etfRadarList", []) if e.get("volumeMultiplier", 1.0) >= 1.2],
+            "factions": holdings.get("factions"),
+            "coreHoldingsCount": len(holdings.get("coreHoldings", [])),
+            "coreHoldingsTop10": holdings.get("coreHoldings", [])[:10],
+            "followCandidatesCount": len(follow.get("candidates", [])),
+            "followCandidatesTop5": follow.get("candidates", [])[:5],
+        }
+    except Exception as e:
+        logger.error(f"执行 get_national_team_overview 失败: {e}")
+        return {"error": f"获取国家队操盘数据失败: {str(e)}"}
+
+
+def execute_stock_money_flow(symbol: str) -> Dict[str, Any]:
+    """获取个股盘中大单力量与逐日主力资金流水"""
+    try:
+        from app.services.national_team import national_team_service
+        return national_team_service.get_stock_money_flow(symbol)
+    except Exception as e:
+        logger.error(f"执行 get_stock_money_flow 失败: {e}")
+        return {"error": f"获取资金流向失败: {str(e)}"}
+
+
 def dispatch_ai_tool(tool_name: str, tool_args: Dict[str, Any], user_id: Optional[str] = None) -> Dict[str, Any]:
     """AI Function Call 统一分发执行器"""
     logger.info(f"⚡ [AI Agent Tool Call]: {tool_name} with args {tool_args} (user_id={user_id})")
@@ -269,6 +373,12 @@ def dispatch_ai_tool(tool_name: str, tool_args: Dict[str, Any], user_id: Optiona
             return execute_active_risk_alerts(user_id or "")
         elif tool_name == "get_portfolio_summary":
             return execute_portfolio_summary(user_id or "")
+        elif tool_name == "get_dividend_calendar":
+            return execute_dividend_calendar(user_id or "", year=tool_args.get("year"), month=tool_args.get("month"))
+        elif tool_name == "get_national_team_overview":
+            return execute_national_team_overview()
+        elif tool_name == "get_stock_money_flow":
+            return execute_stock_money_flow(tool_args.get("symbol", ""))
         elif tool_name == "get_stock_quote":
             return execute_stock_quote(tool_args.get("symbol", ""))
         elif tool_name == "get_financial_analysis":

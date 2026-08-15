@@ -27,6 +27,7 @@ import {
   Image as ImageIcon,
   RotateCcw,
   CheckCircle2,
+  UserCircle2,
 } from "lucide-react";
 import { AIActionCard, InvestScopeAction } from "./ai-action-card";
 
@@ -576,7 +577,47 @@ export function AIAssistantDrawer() {
       };
     }
 
-    if (pathname.startsWith("/dividend/") && pathname !== "/dividend") {
+    // 1. 优先精准匹配 现金流日历 (/dividend/calendar 或 /calendar)
+    if (pathname === "/dividend/calendar" || pathname === "/calendar") {
+      return {
+        contextTag: "📌 现金流日历专属分析:",
+        prompts: [
+          "📅 预测未来 12 个月现金流到账月度波峰与波谷",
+          "📉 分析哪个月份是现金流断档期，如何买入资产补齐缺口",
+          "🎯 测算今年预估被动现金流总额能否达成目标",
+          "⚖️ 如何通过高息标的与按月结息理财实现月月有钱收",
+        ],
+      };
+    }
+
+    // 2. 国家队操盘与跟随策略
+    if (pathname === "/national-team") {
+      return {
+        contextTag: "📌 国家队操盘与跟随策略专属分析:",
+        prompts: [
+          "🚨 今日国家队主要在哪些 ETF 上进行了大单托底",
+          "🏆 帮我分析国家队跟车高股息池中胜率最高的 3 只标的",
+          "🏛️ 汇金和社保共同重仓的高分红核心资产有哪些",
+          "⚡ 招商银行/工商银行今天主力大单净流入多少",
+        ],
+      };
+    }
+
+    // 3. 我的资产 / 资产组合
+    if (pathname === "/assets" || pathname === "/portfolio") {
+      return {
+        contextTag: "📌 资产配置与账户诊断专属分析:",
+        prompts: [
+          "💡 一键全景诊断我的持仓结构与收益风险敞口",
+          "🛡️ 检查我的现金避险仓与防守安全垫比例",
+          "💰 我有 5 万元闲置资金结合当前持仓怎么配",
+          "🏦 到期定期存单与理财收益如何最大化",
+        ],
+      };
+    }
+
+    // 4. 个股详情 (排除 calendar)
+    if (pathname.startsWith("/dividend/") && pathname !== "/dividend" && pathname !== "/dividend/calendar") {
       const urlCode = pathname.split("/")[2] || "";
       const decodedName = decodeURIComponent(urlCode);
       const stockName = quote?.name || financialAnalysis?.name || decodedName;
@@ -592,6 +633,7 @@ export function AIAssistantDrawer() {
       };
     }
 
+    // 5. 红利选股大厅
     if (pathname === "/dividend") {
       return {
         contextTag: "📌 红利选股大厅专属分析:",
@@ -604,6 +646,7 @@ export function AIAssistantDrawer() {
       };
     }
 
+    // 6. 宏观大盘
     if (pathname === "/market") {
       return {
         contextTag: "📌 宏观大盘专属分析:",
@@ -873,6 +916,7 @@ export function AIAssistantDrawer() {
         })),
         model: selectedModel,
         mode: selectedMode,
+        currentPage: pathname,
       };
 
       const res = await fetch(`${API_BASE}/api/ai/chat`, {
@@ -1232,20 +1276,20 @@ export function AIAssistantDrawer() {
                       return (
                         <div
                           key={msg.id}
-                          className={`flex gap-2.5 ${isUser ? "justify-end" : "justify-start"}`}
+                          className={`flex gap-2.5 items-start ${isUser ? "justify-end" : "justify-start"}`}
                         >
                           {!isUser && (
-                            <div className="w-6 h-6 rounded-full bg-primary/20 text-primary flex items-center justify-center shrink-0 mt-0.5 select-none">
+                            <div className="w-6 h-6 rounded-lg bg-emerald-500/10 border border-emerald-500/25 text-emerald-400 flex items-center justify-center shrink-0 mt-0.5 select-none shadow-2xs">
                               <Bot className="w-3.5 h-3.5" />
                             </div>
                           )}
 
-                          <div className="group relative max-w-[88%] select-text">
+                          <div className={`group relative max-w-[85%] select-text ${isUser ? "flex flex-col items-end" : ""}`}>
                             <div
-                              className={`p-3 rounded-2xl leading-relaxed select-text ${
+                              className={`leading-relaxed select-text transition-colors ${
                                 isUser
-                                  ? "bg-primary text-primary-foreground rounded-tr-xs shadow-md whitespace-pre-wrap font-normal"
-                                  : "bg-[#1c1e24] text-gray-100 border border-white/10 rounded-tl-xs shadow-md"
+                                  ? "px-4 py-2.5 rounded-2xl rounded-tr-xs bg-gradient-to-r from-blue-700/80 to-indigo-700/80 hover:from-blue-700/90 hover:to-indigo-700/90 text-white border border-blue-400/30 shadow-xs font-normal text-xs whitespace-pre-wrap break-words"
+                                  : "p-3.5 rounded-2xl rounded-tl-xs bg-[#16171e] text-gray-200 border border-white/10 shadow-xs text-xs"
                               }`}
                             >
                               {msg.images && msg.images.length > 0 && (
@@ -1255,7 +1299,7 @@ export function AIAssistantDrawer() {
                                       key={imgIdx}
                                       src={imgUrl}
                                       alt="Uploaded asset"
-                                      className="max-h-48 max-w-full rounded-xl object-contain border border-white/15 shadow-sm"
+                                      className="max-h-48 max-w-full rounded-xl object-contain border border-white/15 shadow-xs"
                                     />
                                   ))}
                                 </div>
@@ -1271,11 +1315,11 @@ export function AIAssistantDrawer() {
 
                               {/* 助手消息内置复制底栏 */}
                               {!isUser && msg.content && (
-                                <div className="mt-2.5 pt-1.5 border-t border-white/10 flex items-center justify-between text-[10px] text-default-400 select-none">
-                                  <span className="opacity-60 text-[9px]">InvestScope AI</span>
+                                <div className="mt-2.5 pt-1.5 border-t border-white/5 flex items-center justify-between text-[10px] text-default-400 select-none">
+                                  <span className="opacity-50 text-[9px]">InvestScope AI</span>
                                   <button
                                     onClick={() => handleCopy(msg.id, msg.content)}
-                                    className="px-2 py-0.5 rounded hover:bg-white/10 hover:text-white transition-all flex items-center gap-1 text-default-400 active:scale-95"
+                                    className="px-1.5 py-0.5 rounded hover:bg-white/10 hover:text-white transition-all flex items-center gap-1 text-default-400 active:scale-95 cursor-pointer"
                                     title="复制全文"
                                   >
                                     {copiedId === msg.id ? (
@@ -1286,7 +1330,7 @@ export function AIAssistantDrawer() {
                                     ) : (
                                       <>
                                         <Copy className="w-3 h-3" />
-                                        <span>复制全文</span>
+                                        <span>复制</span>
                                       </>
                                     )}
                                   </button>
@@ -1294,23 +1338,23 @@ export function AIAssistantDrawer() {
                               )}
                             </div>
 
-                            {/* 用户消息悬浮复制按钮 */}
+                            {/* 用户消息悬浮复制操作 */}
                             {isUser && msg.content && (
-                              <div className="opacity-0 group-hover:opacity-100 transition-opacity flex justify-end mt-1 pr-1">
+                              <div className="opacity-0 group-hover:opacity-100 transition-opacity flex justify-end mt-1 text-[10px] text-default-400 pr-1 select-none">
                                 <button
                                   onClick={() => handleCopy(msg.id, msg.content)}
-                                  className="hover:text-primary transition-colors flex items-center gap-0.5"
+                                  className="hover:text-primary transition-colors flex items-center gap-1 cursor-pointer"
                                 >
                                   {copiedId === msg.id ? <Check className="w-3 h-3 text-emerald-400" /> : <Copy className="w-3 h-3" />}
-                                  {copiedId === msg.id ? "已复制" : "复制"}
+                                  <span>{copiedId === msg.id ? "已复制" : "复制"}</span>
                                 </button>
                               </div>
                             )}
                           </div>
 
                           {isUser && (
-                            <div className="w-6 h-6 rounded-full bg-default-200 text-default-600 flex items-center justify-center shrink-0 mt-0.5 text-[10px] font-bold">
-                              ME
+                            <div className="w-6 h-6 rounded-lg bg-blue-500/20 border border-blue-400/30 text-blue-300 flex items-center justify-center shrink-0 mt-0.5 text-[10px] font-medium select-none shadow-2xs">
+                              <UserCircle2 className="w-3.5 h-3.5" />
                             </div>
                           )}
                         </div>

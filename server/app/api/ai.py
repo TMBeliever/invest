@@ -29,6 +29,8 @@ class ChatRequestPayload(BaseModel):
     messages: List[ChatMessagePayload]
     model: Optional[str] = None
     mode: Optional[str] = "finance"  # "finance" | "general"
+    currentPage: Optional[str] = None
+    pageContext: Optional[Dict[str, Any]] = None
 
 
 def _build_system_prompt(
@@ -36,16 +38,19 @@ def _build_system_prompt(
     session_summary: Optional[str] = None,
     user_query: Optional[str] = None,
     mode: str = "finance",
+    current_page: Optional[str] = None,
+    page_context: Optional[Dict[str, Any]] = None,
 ) -> str:
     now_str = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     weekday_str = ["星期一", "星期二", "星期三", "星期四", "星期五", "星期六", "星期日"][
         datetime.datetime.now().weekday()
     ]
     summary_part = f"\n\n[早期对话历史要点]:\n{session_summary}" if session_summary else ""
+    page_part = f"\n- 用户当前正处于页面: {current_page}" if current_page else ""
 
     if mode == "general":
         return f"""你是一名知识渊博、解答详尽、逻辑严谨的【通用智能 AI 助手】。
-当前精准时间: {now_str} {weekday_str}
+当前精准时间: {now_str} {weekday_str}{page_part}
 
 [核心能力与回答准则]:
 1. 具备广泛的通用知识储备，支持科学常识、文本创作、代码编写与调试、逻辑推理、外语翻译、工作生活咨询等全方位场景。
@@ -61,26 +66,29 @@ def _build_system_prompt(
     except Exception:
         bond_10y, risk_ratio = 1.71, 3.05
 
-    return f"""你是一名精通个人资产配置、组合风险穿透与高股息量化策略的【InvestScope 智能 AI 投资顾问】。
+    return f"""你是一名精通个人资产配置、现金流推演、组合风险穿透与高股息量化策略的【InvestScope 智能 AI 投资顾问】。
 
 [系统基准环境]:
 - 当前精准时间: {now_str} {weekday_str}
-- 10年期国债基准收益率: {bond_10y}% | 股债风险溢价比 (ERP): {risk_ratio}{summary_part}
+- 10年期国债基准收益率: {bond_10y}% | 股债风险溢价比 (ERP): {risk_ratio}{page_part}{summary_part}
 
 [核心能力与 Agentic 工具调用规范]:
 1. **自主工具调度 (Tool-Use / Function Calling)**:
    你拥有全套系统级实时量化工具库（Tools）：
-   - `get_portfolio_xray()`: 获取用户当前全部真实资产的【全景 X 光透视体检报告】（包括底层行业真实穿透敞口、CR3与HHI集中度指数、五维因子雷达、4 种宏观极端压力测试预期盈亏与弹性评级）。
-   - `get_portfolio_summary()`: 获取用户当前资产净值概况、持仓总浮盈、预估年现金流收益与资产持仓列表。
+   - `get_dividend_calendar(year, month)`: 获取用户真实现金流日历、未来12个月月度分红/利息到账波峰波谷与具体结息事件（用于分析断档期与月度现金流平滑）。
+   - `get_national_team_overview()`: 获取国家队操盘雷达全景、12大核心护盘ETF秒级放量异动与四大主力万亿持仓底牌。
+   - `get_stock_money_flow(symbol)`: 获取个股盘中大单多空力量及近15日逐日主力资金流水与国家队机构拆解。
+   - `get_portfolio_xray()`: 获取用户当前全部真实资产的【全景 X 光透视体检报告】（行业敞口、CR3/HHI集中度、五维因子雷达、4 种极端压力测试）。
+   - `get_portfolio_summary()`: 获取用户当前资产净值概况、持仓总浮盈、预估年现金流收益与持仓清单。
    - `get_stock_quote(symbol)`: 获取单只股票或场内ETF的盘中秒级实时行情、最新股价、涨跌幅与动态股息率。
    - `get_financial_analysis(symbol)`: 获取官方财报体检、杜邦 ROE 拆解、4 大排雷指标及业绩前瞻。
    - `get_stock_news(symbol)`: 获取最新资讯、分红派息公告。
    - `compare_stocks(symbols)`: 多股横向对比矩阵。
-   *当用户提问涉及持仓体检、X光解读、压力测试、个股行情、财报或对比时，请自主调用对应工具获取最新真实数据后回答，严禁凭空编造虚假数字！*
+   *当用户提问涉及持仓体检、现金流日历、国家队操盘、资金流向、压力测试、个股行情或财报时，请自主调用对应工具获取最新真实数据后回答，严禁凭空编造虚假数字！*
 
 2. **回答准则与专业度**:
    - 语言风格亲切、专业、洞察深刻。多用 Markdown 标题、加粗、数据对比表格与引用卡片。
-   - 解读体检时，按【核心概览 ➔ 行业穿透与集中度剖析 ➔ 极端压力测试表现 ➔ 针对性优化调仓建议】结构化展开。
+   - 结合用户当前所处页面和真实资产给出具指导意义的资产配置建议。
 
 3. **【智能 Action 操作卡片生成规范】**:
    当用户的提问或上传的截图表达了明确的操作意图时，先给出亲切专业的解读与分析，并在回答最底部输出标准的 ```action:investscope 结构化代码块（前端会自动渲染为高颜值的交互操作卡片）：
@@ -287,7 +295,14 @@ def chat_stream(
 
         # 2. 在流生成器内部安全组装 System Prompt (带超时与容错保护)
         try:
-            system_prompt = _build_system_prompt(user_id, session_summary, user_msg_content, mode=requested_mode)
+            system_prompt = _build_system_prompt(
+                user_id,
+                session_summary,
+                user_msg_content,
+                mode=requested_mode,
+                current_page=payload.currentPage,
+                page_context=payload.pageContext,
+            )
         except Exception as e:
             logger.error(f"组装 System Prompt 异常: {e}")
             system_prompt = "你是一名智能 AI 助手。请专业详尽地解答用户的问题。"
