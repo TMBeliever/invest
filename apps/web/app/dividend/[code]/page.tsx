@@ -561,26 +561,6 @@ export default function StockDetailPage({ params }: { params: Promise<{ code: st
         </div>
       </div>
 
-      {/* 历史回测胜率矩阵 */}
-      <div className="glass-panel p-6 mb-6">
-        <h3 className="text-base font-semibold mb-4 flex items-center gap-2">
-          <Award className="w-5 h-5 text-amber-500" />
-          当前估值买入的历史胜率矩阵
-        </h3>
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-          {winRateMatrix.map((item) => (
-            <div key={item.period} className="p-4 rounded-xl bg-default-50/50 text-center">
-              <span className="text-xs text-default-400 block mb-1">{item.period}</span>
-              <div className="text-2xl font-bold text-emerald-400 mb-1">{item.winRate}% 正收益</div>
-              <div className="flex justify-around text-[10px] text-default-400">
-                <span>平均收益 {item.avgReturn}</span>
-                <span>最大回撤 {item.maxDrawdown}</span>
-              </div>
-            </div>
-          ))}
-        </div>
-      </div>
-
       {/* 核心亮点与风险提示 (纯动态生成) */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
         <div className="glass-panel p-5 border-emerald-500/20">

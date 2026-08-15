@@ -392,6 +392,44 @@ export const EarningsPreviewSchema = z.object({
 });
 export type EarningsPreview = z.infer<typeof EarningsPreviewSchema>;
 
+export const InstitutionalReportItemSchema = z.object({
+  orgName: z.string(),
+  orgType: z.enum(["GLOBAL_TIER1", "DOMESTIC_TIER1", "DOMESTIC_TIER2", "REGIONAL"]).optional(),
+  orgTierLabel: z.string().optional(),
+  historicalAccuracy: z.object({
+    accuracyPct: z.number(),
+    accuracyStars: z.number(),
+    trackRecordTag: z.string().optional(),
+  }).optional(),
+  rating: z.string(),
+  targetPrice: z.number().optional(),
+  upsidePct: z.number().optional(),
+  publishDate: z.string().optional(),
+  title: z.string().optional(),
+  pdfUrl: z.string().optional(),
+});
+export type InstitutionalReportItem = z.infer<typeof InstitutionalReportItemSchema>;
+
+export const InstitutionalResearchSchema = z.object({
+  currentPrice: z.number(),
+  consensusTargetPrice: z.number(),
+  minTargetPrice: z.number().optional(),
+  maxTargetPrice: z.number().optional(),
+  upsidePotentialPct: z.number(),
+  totalReportCount: z.number().optional(),
+  ratingDistribution: z.object({
+    buy: z.number(),
+    outperform: z.number(),
+    neutral: z.number(),
+    sell: z.number(),
+    buyRatio: z.number(),
+  }).optional(),
+  institutions: z.array(InstitutionalReportItemSchema).optional(),
+  researchHighlights: z.array(z.string()).optional(),
+  disclaimer: z.string().optional(),
+});
+export type InstitutionalResearch = z.infer<typeof InstitutionalResearchSchema>;
+
 export const FinancialAnalysisReportSchema = z.object({
   code: z.string(),
   name: z.string(),
@@ -399,6 +437,7 @@ export const FinancialAnalysisReportSchema = z.object({
   healthScan: FinancialHealthScanSchema,
   dupont: DuPontBreakdownSchema,
   earningsPreview: EarningsPreviewSchema,
+  institutionalResearch: InstitutionalResearchSchema.optional(),
   updatedAt: z.string(),
 });
 export type FinancialAnalysisReport = z.infer<typeof FinancialAnalysisReportSchema>;
