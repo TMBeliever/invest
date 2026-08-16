@@ -5,7 +5,6 @@ import datetime
 
 class ReportType(str, Enum):
     SENTINEL_ALERT = "SENTINEL_ALERT"        # 个人持仓哨兵与风控预警
-    OPPORTUNITY_PATROL = "OPPORTUNITY_PATROL"  # 机会巡视雷达 (超跌/高息/破净/大底)
     MORNING_RADAR = "MORNING_RADAR"          # 每日早盘前瞻
     CLOSING_REVIEW = "CLOSING_REVIEW"        # 每日收盘复盘
     SECTOR_INSIGHT = "SECTOR_INSIGHT"        # 行业/黄金/大宗商品专题
@@ -56,7 +55,6 @@ class UserSubscriptionConfig(BaseModel):
     closing_review_time: str = "15:30"       # 收盘复盘时间 "HH:MM"
     patrol_scan_frequency: str = "INTERVAL_30MIN" # "INTERVAL_30MIN", "INTERVAL_60MIN", "TIMES_1030_1430"
 
-    # 机会巡视量化门槛参数 (可滑动调节)
     min_dividend_yield: float = 5.5          # 最低股息率门槛 %
     max_pb_ratio: float = 0.85               # 最高市净率破净门槛
     min_market_cap_billion: float = 100.0    # 最低市值门槛 (亿元)

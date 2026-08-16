@@ -4,7 +4,7 @@ import logging
 from typing import Set, Dict, Any, List, Optional
 from app.data.storage import storage_db
 from app.services.intelligence.sentinel_risk import sentinel_risk_generator
-from app.services.intelligence.opportunity_patrol import opportunity_patrol_generator
+
 from app.services.intelligence.morning_radar import morning_radar_generator
 from app.services.intelligence.closing_review import closing_review_generator
 from app.services.dispatcher.router import dispatch_router
@@ -89,7 +89,7 @@ class SchedulerService:
                             except Exception as e:
                                 logger.error(f"[Scheduler] 收盘推送失败 [{u_id}]: {e}")
 
-                    # ─── 3. 风险哨兵、机会巡视与策略魔方盘中每 10 分钟准点巡检 ─────
+                    # ─── 3. 风险哨兵盘中每 10 分钟准点巡检 ─────
                     freq = cfg.get("patrol_scan_frequency") or "INTERVAL_10MIN"
                     should_scan = False
 
@@ -120,20 +120,7 @@ class SchedulerService:
                                 except Exception as e:
                                     logger.error(f"[Scheduler] 巡检风险异常 [{u_id}]: {e}")
 
-                            # 3.2 机会巡视雷达
-                            if cfg.get("enable_opportunity_patrol", True):
-                                try:
-                                    opps = await opportunity_patrol_generator.scan_and_generate_opportunities(u_id)
-                                    for op in opps:
-                                        op_rule = op.structured_metrics.get("rule_code", "")
-                                        op_symbol = op.symbol or "GLOBAL"
-                                        op_key = f"{today_str}:OPP:{u_id}:{op_rule}:{op_symbol}"
-                                        if op_key not in self._pushed_keys:
-                                            self._pushed_keys.add(op_key)
-                                            logger.info(f"🎯 [Scheduler] 触发用户 [{u_id}] 机会雷达推送: {op.title}")
-                                            await dispatch_router.dispatch(op, user_id=u_id)
-                                except Exception as e:
-                                    logger.error(f"[Scheduler] 巡检机会异常 [{u_id}]: {e}")
+
 
                 # ─── 4. 早盘公告扫描、突发排雷与策略魔方定时预热 (早盘 08:00 / 盘后 15:40 / 盘中每 10 分钟) ───
                 if (hour == 8 and minute == 0) or (hour == 15 and minute == 40) or (is_market_hours and minute % 10 == 0):

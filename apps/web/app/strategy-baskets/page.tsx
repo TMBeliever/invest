@@ -302,7 +302,7 @@ export default function StrategyBasketsPage() {
             <span className="text-xs text-gray-200 font-bold flex items-center gap-1.5">
               <PieChart className="w-4 h-4 text-primary" /> 组合权重配置方式
             </span>
-            <div className="flex items-center bg-black/40 p-1 rounded-xl border border-white/10 text-xs">
+            <div className="flex flex-wrap items-center bg-black/40 p-1 rounded-xl border border-white/10 text-xs gap-1">
               <button
                 onClick={() => setWeightMethod("EQUAL")}
                 className={`px-3 py-1.5 rounded-lg transition-all font-medium ${
@@ -311,7 +311,7 @@ export default function StrategyBasketsPage() {
                     : "text-default-400 hover:text-white"
                 }`}
               >
-                等权均衡配置 (Equal)
+                等权均衡 (Equal)
               </button>
               <button
                 onClick={() => setWeightMethod("DIVIDEND")}
@@ -321,7 +321,17 @@ export default function StrategyBasketsPage() {
                     : "text-default-400 hover:text-white"
                 }`}
               >
-                股息率加权 (Dividend Weighted)
+                股息率加权 (Dividend)
+              </button>
+              <button
+                onClick={() => setWeightMethod("SCORE")}
+                className={`px-3 py-1.5 rounded-lg transition-all font-medium ${
+                  weightMethod === "SCORE"
+                    ? "bg-primary text-primary-foreground shadow-sm"
+                    : "text-default-400 hover:text-white"
+                }`}
+              >
+                评分占比加权 (Score Weighted)
               </button>
             </div>
           </div>
@@ -452,7 +462,7 @@ export default function StrategyBasketsPage() {
                             <div>
                               <Link
                                 href={`/dividend/${trap.code}`}
-                                className="font-bold text-gray-200 hover:text-rose-400 line-through decoration-rose-500/50 block text-xs transition-colors"
+                                className="font-bold text-white hover:text-rose-400 transition-colors block"
                               >
                                 {trap.name}
                               </Link>
@@ -460,33 +470,25 @@ export default function StrategyBasketsPage() {
                             </div>
                           </div>
                         </td>
-                        <td className="py-3 px-3 text-default-300">{trap.industry}</td>
-                        <td className="py-3 px-3 font-mono">
-                          <span className="text-rose-400 font-bold">
-                            {trap.surfaceDividendYield > 0 ? `${trap.surfaceDividendYield.toFixed(2)}%` : "--"}
-                          </span>
-                          <span className="text-[9px] text-rose-500/80 block">⚠️ 虚高陷阱</span>
+                        <td className="py-3 px-3 text-default-400">{trap.industry}</td>
+                        <td className="py-3 px-3 font-mono font-bold text-rose-400">
+                          {trap.surfaceDividendYield ? `${trap.surfaceDividendYield.toFixed(2)}%` : "--"}
                         </td>
                         <td className="py-3 px-3">
-                          <span className="text-[11px] px-2 py-0.5 rounded-md bg-rose-500/10 border border-rose-500/30 text-rose-300 font-medium">
+                          <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-rose-500/15 border border-rose-500/30 text-rose-300">
                             {trap.trapLabel}
                           </span>
                         </td>
                         <td className="py-3 px-4">
-                          <div className="text-xs text-rose-200 font-medium leading-relaxed">
-                            {trap.deadlyReason}
-                          </div>
-                          <div className="text-[10px] text-default-500 mt-0.5">
-                            官方依据：{trap.financialEvidence}
-                          </div>
+                          <div className="text-gray-200 font-medium">{trap.deadlyReason}</div>
+                          <div className="text-[10px] text-default-500 mt-0.5">{trap.financialEvidence}</div>
                         </td>
                         <td className="py-3 px-3 text-right">
                           <Link
                             href={`/dividend/${trap.code}`}
-                            className="px-2.5 py-1 rounded-lg bg-rose-500/10 hover:bg-rose-500/20 text-rose-300 hover:text-rose-200 border border-rose-500/30 text-[11px] font-medium transition-colors inline-flex items-center gap-1"
+                            className="text-[11px] text-default-400 hover:text-white transition-colors"
                           >
-                            <span>排雷体检</span>
-                            <ExternalLink className="w-3 h-3" />
+                            体检详情 →
                           </Link>
                         </td>
                       </tr>
@@ -637,10 +639,11 @@ export default function StrategyBasketsPage() {
                 <tr className="border-b border-white/10 bg-white/5 text-default-400">
                   <th className="py-3.5 px-4 font-semibold">标的名称/代码</th>
                   <th className="py-3.5 px-3 font-semibold">现价/今日</th>
+                  <th className="py-3.5 px-3 font-semibold">量化综合评分</th>
                   <th className="py-3.5 px-3 font-semibold">动态股息率</th>
                   <th className="py-3.5 px-3 font-semibold">ROE (收益率)</th>
                   <th className="py-3.5 px-3 font-semibold">估值 PE/PB</th>
-                  <th className="py-3.5 px-3 font-semibold">建议配置权重</th>
+                  <th className="py-3.5 px-3 font-semibold">建议配置占比</th>
                   <th className="py-3.5 px-4 font-semibold">入选核心理由与国家队标签</th>
                   <th className="py-3.5 px-3 text-right font-semibold">操作</th>
                 </tr>
@@ -676,6 +679,24 @@ export default function StrategyBasketsPage() {
                       >
                         {stock.changePct >= 0 ? "+" : ""}
                         {stock.changePct.toFixed(2)}%
+                      </div>
+                    </td>
+
+                    {/* 量化综合评分 & 分项明细 */}
+                    <td className="py-3.5 px-3 font-mono">
+                      <div className="space-y-1">
+                        <div className="flex items-center gap-1.5">
+                          <span className="px-2 py-0.5 rounded-md bg-amber-500/20 border border-amber-500/40 text-amber-300 font-extrabold text-xs shadow-xs">
+                            {stock.score}分
+                          </span>
+                        </div>
+                        {stock.scoreBreakdown && (
+                          <div className="flex items-center gap-1 text-[9.5px] text-default-400 whitespace-nowrap">
+                            <span className="text-purple-300 bg-purple-500/10 px-1 py-0.2 rounded" title="💎 品质分 (杜邦ROE/连续分红年限)">品 {stock.scoreBreakdown.quality}</span>
+                            <span className="text-emerald-300 bg-emerald-500/10 px-1 py-0.2 rounded" title="💰 股息分 (动态股息率/破净折价)">息 {stock.scoreBreakdown.dividend}</span>
+                            <span className="text-sky-300 bg-sky-500/10 px-1 py-0.2 rounded" title="🛡️ 安全分 (国家队托底/破净安全垫)">安 {stock.scoreBreakdown.safety}</span>
+                          </div>
+                        )}
                       </div>
                     </td>
 

@@ -11,7 +11,7 @@ import {
   Activity,
   PieChart,
   RefreshCw,
-  Sparkles,
+
   Landmark,
   Zap,
 } from "lucide-react";
@@ -295,139 +295,6 @@ function SentimentWidget() {
   );
 }
 
-function OpportunityPatrolWidget() {
-  const [opportunities, setOpportunities] = useState<any[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [scanning, setScanning] = useState(false);
-  const API_BASE = process.env.NEXT_PUBLIC_API_URL || "";
-
-  const fetchOpportunities = async () => {
-    try {
-      const token = useAuthStore.getState().token;
-      if (!token) return;
-      const res = await fetch(`${API_BASE}/api/intelligence/opportunities`, {
-        headers: { Authorization: `Bearer ${token}` },
-      });
-      if (res.ok) {
-        const data = await res.json();
-        setOpportunities(data.opportunities || []);
-      }
-    } catch (e) {
-      console.error(e);
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const handleScanNow = async () => {
-    setScanning(true);
-    try {
-      const token = useAuthStore.getState().token;
-      const res = await fetch(`${API_BASE}/api/intelligence/opportunities/scan`, {
-        method: "POST",
-        headers: { Authorization: `Bearer ${token}` },
-      });
-      if (res.ok) {
-        const data = await res.json();
-        setOpportunities(data.opportunities || []);
-      }
-    } catch (e) {
-      console.error(e);
-    } finally {
-      setScanning(false);
-    }
-  };
-
-  useEffect(() => {
-    fetchOpportunities();
-  }, []);
-
-  const topOpps = opportunities.slice(0, 4);
-
-  return (
-    <div className="glass-panel p-6 animate-fade-in space-y-4">
-      <div className="flex items-center justify-between">
-        <div className="flex items-center gap-2">
-          <div className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
-          <Sparkles className="w-5 h-5 text-emerald-400" />
-          <h3 className="text-sm font-semibold text-white">🎯 机会巡视雷达 (高胜率捡漏)</h3>
-          <span className="text-[10px] px-2 py-0.5 rounded-full bg-emerald-500/15 text-emerald-300 font-semibold border border-emerald-500/20">
-            量化评分 ≥ 80分
-          </span>
-        </div>
-
-        <div className="flex items-center gap-2">
-          <button
-            onClick={handleScanNow}
-            disabled={scanning}
-            className="px-2.5 py-1 rounded-lg bg-white/5 hover:bg-white/15 border border-white/10 text-[11px] text-gray-300 hover:text-white transition-all flex items-center gap-1 cursor-pointer disabled:opacity-40"
-          >
-            <RefreshCw className={`w-3 h-3 ${scanning ? "animate-spin text-emerald-400" : "text-emerald-400"}`} />
-            <span>{scanning ? "全域扫描中..." : "即刻巡视"}</span>
-          </button>
-          <Link href="/settings" className="text-xs text-primary hover:underline">
-            策略调参 →
-          </Link>
-        </div>
-      </div>
-
-      {loading ? (
-        <div className="py-8 text-center text-xs text-default-400">
-          <RefreshCw className="w-4 h-4 animate-spin inline mr-1 text-emerald-400" /> 正在巡视 4 大核心黄金资产池...
-        </div>
-      ) : topOpps.length === 0 ? (
-        <div className="py-8 text-center text-xs text-default-400 bg-black/20 rounded-2xl border border-white/5">
-          🎯 当前市场标的暂未触及极端黄金买点阈值（宁缺毋滥，严控风险）
-        </div>
-      ) : (
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
-          {topOpps.map((op: any) => {
-            const score = op.structured_metrics?.score || 80;
-            const dy = op.structured_metrics?.dividend_yield;
-            const pb = op.structured_metrics?.pb;
-            return (
-              <div
-                key={op.id}
-                className="p-3.5 rounded-2xl bg-black/30 hover:bg-black/40 border border-emerald-500/20 hover:border-emerald-500/40 transition-all group flex flex-col justify-between space-y-2"
-              >
-                <div>
-                  <div className="flex items-center justify-between mb-1">
-                    <span className="text-xs font-bold text-white group-hover:text-emerald-300 transition-colors truncate">
-                      {op.symbol_name || op.title}
-                    </span>
-                    <span className="text-[10px] px-1.5 py-0.5 rounded bg-emerald-500/20 text-emerald-300 font-mono font-bold">
-                      {score}分
-                    </span>
-                  </div>
-                  <div className="text-[10px] text-default-400 font-mono mb-1.5">
-                    {op.symbol ? `${op.symbol}` : "宏观/大类"}
-                    {dy ? ` · 股息率 ${dy}%` : ""}
-                    {pb ? ` · PB ${pb}` : ""}
-                  </div>
-                  <p className="text-[11px] text-gray-300 line-clamp-2 leading-relaxed">
-                    {op.summary}
-                  </p>
-                </div>
-
-                {op.decision_options && op.decision_options.length > 0 && (
-                  <div className="pt-2 border-t border-white/10 flex items-center justify-between">
-                    <span className="text-[10px] text-emerald-400 font-medium">
-                      💡 {op.decision_options[0].name}
-                    </span>
-                    <span className="text-[9px] px-1.5 py-0.5 rounded bg-white/5 text-default-400">
-                      {op.decision_options[0].tag}
-                    </span>
-                  </div>
-                )}
-              </div>
-            );
-          })}
-        </div>
-      )}
-    </div>
-  );
-}
-
 function NationalTeamBannerWidget() {
   const { overview, fetchOverview, loading } = useNationalTeamStore();
 
@@ -508,9 +375,6 @@ export default function DashboardPage() {
 
       {/* 🇨🇳 国家队操盘雷达快速入口 */}
       <NationalTeamBannerWidget />
-
-      {/* 🎯 机会巡视雷达 (全新攻防一体核心组件) */}
-      <OpportunityPatrolWidget />
 
       {/* 主要内容区 */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">

@@ -7,7 +7,13 @@ export type BasketStrategyKey =
   | "HIGH_ROE_GROWTH"
   | "SOVEREIGN_SUPPORT";
 
-export type BasketWeightMethod = "EQUAL" | "DIVIDEND";
+export type BasketWeightMethod = "EQUAL" | "DIVIDEND" | "SCORE";
+
+export interface StockScoreBreakdown {
+  quality: number;
+  dividend: number;
+  safety: number;
+}
 
 export interface StrategyBasketStock {
   code: string;
@@ -23,6 +29,7 @@ export interface StrategyBasketStock {
   nationalTeamRatio: number;
   nationalTeamLabel?: string;
   score: number;
+  scoreBreakdown?: StockScoreBreakdown;
   reasons: string[];
   potentialRisks?: string[];
   weightPct: number;

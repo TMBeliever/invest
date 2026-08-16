@@ -21,7 +21,7 @@ class ApplyBasketPayload(BaseModel):
 def generate_strategy_basket(
     count: int = Query(10, ge=3, le=20, description="股票数量 3 ~ 20 只"),
     strategy: str = Query("BALANCED_QUALITY", description="策略模式 (BALANCED_QUALITY | DEEP_VALUE_SAFETY | HIGH_ROE_GROWTH | SOVEREIGN_SUPPORT)"),
-    weight_method: str = Query("EQUAL", description="权重方式 (EQUAL | DIVIDEND)"),
+    weight_method: str = Query("EQUAL", description="权重方式 (EQUAL | DIVIDEND | SCORE)"),
 ) -> Dict[str, Any]:
     """
     智能生成 3 ~ 20 只优质红利自选组合及中证红利 ETF 对比报告

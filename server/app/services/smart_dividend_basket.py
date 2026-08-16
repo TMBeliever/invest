@@ -378,6 +378,11 @@ class SmartDividendBasketService:
                 "nationalTeamRatio": round(national_team_ratio, 2),
                 "nationalTeamLabel": national_team_label,
                 "score": round(total_score, 1),
+                "scoreBreakdown": {
+                    "quality": round(score_quality, 1),
+                    "dividend": round(score_dividend, 1),
+                    "safety": round(score_safety, 1),
+                },
                 "reasons": reasons[:3],
                 "potentialRisks": potential_risks[:2],
             })
@@ -410,9 +415,12 @@ class SmartDividendBasketService:
         # 📊 阶段 4: 权重配置与指标加权
         # ─────────────────────────────────────────────────────────────────
         total_dy_raw = sum(s["dividendYield"] for s in selected_stocks)
+        total_score_raw = sum(s["score"] for s in selected_stocks)
         for s in selected_stocks:
             if weight_method == "DIVIDEND" and total_dy_raw > 0:
                 weight_pct = round((s["dividendYield"] / total_dy_raw) * 100, 2)
+            elif weight_method == "SCORE" and total_score_raw > 0:
+                weight_pct = round((s["score"] / total_score_raw) * 100, 2)
             else:
                 weight_pct = round(100.0 / len(selected_stocks), 2)
             s["weightPct"] = weight_pct
